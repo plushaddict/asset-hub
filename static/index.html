@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AssetHub 素材列表</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}[x-cloak]{display:none!important}</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+<div x-data="app()" x-init="init()">
+
+  <div x-cloak x-show="statusLoaded && !status.setupComplete" class="sticky top-0 z-30 bg-amber-50 border-b border-amber-200">
+    <div class="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div class="text-sm font-medium text-amber-900">配置尚未完成，完成下列项后即可正常使用</div>
+      <div class="flex flex-wrap items-center gap-2 text-sm">
+        <div x-show="!status.ossReady" class="flex items-center gap-2 bg-white/80 border border-amber-200 rounded-lg px-3 py-1.5">
+          <span class="text-amber-900">请先修改 OSS 配置</span>
+          <span class="text-xs text-red-500 max-w-[280px] truncate" x-show="status.ossError" :title="status.ossError" x-text="status.ossError"></span>
+          <button type="button" @click="location.href='/settings?tab=oss'" class="text-xs text-white bg-amber-600 hover:bg-amber-700 px-2 py-1 rounded">去设置</button>
+        </div>
+        <div x-show="status.categoryCount<1" class="flex items-center gap-2 bg-white/80 border border-amber-200 rounded-lg px-3 py-1.5">
+          <span class="text-amber-900">缺少分类</span>
+          <button type="button" @click="location.href='/settings?tab=category'" class="text-xs text-white bg-amber-600 hover:bg-amber-700 px-2 py-1 rounded">去添加</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-7xl mx-auto p-6">
+
+  <div class="flex items-center justify-between mb-5 gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-800">AssetHub 素材管理</h1>
+      <p class="text-xs text-slate-400 mt-1">按分类与标签管理 · 一个素材可挂多种格式文件</p>
+    </div>
+    <div class="flex flex-wrap items-center justify-end gap-2">
+      <a href="/settings" class="border px-4 py-2 rounded-lg text-sm text-slate-500 hover:bg-white">设置</a>
+      <a x-cloak x-show="metaLoaded && categories.length===0" href="/settings?tab=category" class="text-xs text-amber-700 hover:underline">请先添加分类</a>
+      <button type="button" @click="openCreate()" :disabled="categories.length===0"
+              :title="categories.length===0 ? '请先在设置中添加分类' : ''"
+              class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">+ 新建素材</button>
+      <button type="button" @click="logout()" class="border px-4 py-2 rounded-lg text-sm text-slate-500 hover:bg-white">退出</button>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm p-4 mb-5">
+    <div class="flex flex-wrap gap-2 items-center">
+      <input class="flex-1 min-w-[220px] px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+             placeholder="搜索素材名称 / 备注" x-model="keyword" @keyup.enter="search()">
+      <select class="px-3 py-2 border rounded-lg text-sm bg-white" x-model.number="categoryId">
+        <option value="0">全部分类</option>
+        <template x-for="c in categories" :key="c.id">
+          <option :value="c.id" x-text="c.name"></option>
+        </template>
+      </select>
+      <div class="relative" @click.outside="tagFilterOpen=false">
+        <button type="button" @click="tagFilterOpen=!tagFilterOpen"
+                class="px-3 py-2 border rounded-lg text-sm bg-white hover:bg-slate-50 min-w-[120px] text-left">
+          <span x-text="filterTagIds.length ? ('标签（'+filterTagIds.length+'）') : '全部标签'"></span>
+        </button>
+        <div x-cloak x-show="tagFilterOpen" class="absolute left-0 mt-1 w-64 max-w-[80vw] bg-white border rounded-lg shadow-lg z-20 p-2">
+          <div class="text-[11px] text-slate-400 px-1 pb-2">需同时包含所选标签</div>
+          <div x-show="tags.length===0" class="text-xs text-slate-400 px-1 py-2">还没有标签</div>
+          <div class="max-h-52 overflow-auto">
+            <template x-for="t in tags" :key="t.id">
+              <label class="flex items-center gap-2 px-1 py-1 text-sm text-slate-700 hover:bg-slate-50 rounded cursor-pointer" @click.prevent="toggleFilterTag(t.id)">
+                <input type="checkbox" class="rounded border-slate-300" :checked="filterTagIds.includes(t.id)">
+                <span x-text="t.name"></span>
+              </label>
+            </template>
+          </div>
+        </div>
+      </div>
+      <button type="button" @click="search()" class="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-600">查询</button>
+      <button type="button" @click="reset()" class="border px-4 py-2 rounded-lg text-sm text-slate-500 hover:bg-slate-50">重置</button>
+    </div>
+    <p class="text-[11px] text-slate-400 mt-2">标签可多选，结果需同时包含所选标签。</p>
+  </div>
+
+  <div x-show="loading" class="text-center text-slate-400 py-10 text-sm">加载中…</div>
+
+  <div x-show="!loading && list.length===0" class="bg-white rounded-xl p-12 text-center text-slate-400 text-sm">
+    <template x-if="metaLoaded && categories.length===0 && !hasFilter()">
+      <div>
+        还没有分类，无法新建素材。
+        <a href="/settings?tab=category" class="text-amber-700 hover:underline">去设置添加分类</a>
+      </div>
+    </template>
+    <template x-if="!(metaLoaded && categories.length===0 && !hasFilter())">
+      <div x-text="hasFilter() ? '没有符合筛选条件的素材' : '暂无素材，点击右上角「新建素材」开始'"></div>
+    </template>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" x-show="list.length>0">
+    <template x-for="item in list" :key="item.id">
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition">
+        <div class="h-36 bg-slate-50 flex items-center justify-center border-b overflow-hidden">
+          <template x-if="item.primaryUrl">
+            <img :src="item.primaryUrl" class="max-h-36 max-w-full object-contain" alt="">
+          </template>
+          <template x-if="!item.primaryUrl">
+            <span class="text-xs text-slate-300">暂无预览图</span>
+          </template>
+        </div>
+        <div class="p-3">
+          <div class="flex items-center justify-between gap-2">
+            <a :href="'/asset/'+item.id" class="font-medium text-slate-800 hover:text-blue-600 truncate" x-text="item.assetName"></a>
+            <span class="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" x-text="item.categoryName || '未分类'"></span>
+          </div>
+          <div class="flex flex-wrap gap-1 mt-1.5 min-h-[18px]">
+            <template x-if="!item.tags || item.tags.length===0">
+              <span class="text-xs text-slate-400">无标签</span>
+            </template>
+            <template x-for="t in (item.tags || [])" :key="t.id">
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600" x-text="t.name"></span>
+            </template>
+          </div>
+          <div class="text-[11px] text-slate-400 mt-1">
+            <span x-text="item.fileCount"></span> 个格式 · <span x-text="item.createTime"></span>
+          </div>
+          <div class="flex gap-3 mt-3 text-xs">
+            <a :href="'/asset/'+item.id" class="text-blue-600 hover:underline">详情 / 上传</a>
+            <button type="button" @click="remove(item)" class="text-red-500 hover:underline">删除</button>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <div class="flex items-center justify-between mt-6 text-sm text-slate-500" x-show="total>0">
+    <div>共 <span x-text="total"></span> 条，第 <span x-text="page"></span> / <span x-text="totalPages()"></span> 页</div>
+    <div class="flex gap-2">
+      <button type="button" @click="prev()" :disabled="page<=1" class="border px-3 py-1.5 rounded-lg disabled:opacity-40 hover:bg-white">上一页</button>
+      <button type="button" @click="next()" :disabled="page>=totalPages()" class="border px-3 py-1.5 rounded-lg disabled:opacity-40 hover:bg-white">下一页</button>
+    </div>
+  </div>
+
+  </div>
+
+  <!-- 新建素材弹窗 -->
+  <div x-cloak x-show="showCreate" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-xl shadow-xl w-[480px] max-w-full max-h-[90vh] overflow-y-auto p-5" @click.outside="showCreate=false">
+      <h3 class="font-bold text-slate-800 mb-4">新建素材</h3>
+      <p x-show="categories.length===0" class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+        还没有分类，无法新建。
+        <button type="button" class="underline" @click="location.href='/settings?tab=category'">去设置添加</button>
+      </p>
+      <label class="block text-xs text-slate-500 mb-1">素材名称 *（字母/数字/下划线/短横线）</label>
+      <input class="w-full mb-3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+             placeholder="如 logo_book、book_cover_001" x-model="form.assetName">
+      <label class="block text-xs text-slate-500 mb-1">分类 *</label>
+      <select class="w-full mb-3 px-3 py-2 border rounded-lg text-sm bg-white" x-model.number="form.categoryId" :disabled="categories.length===0">
+        <option value="0" disabled>请选择分类</option>
+        <template x-for="c in categories" :key="c.id">
+          <option :value="c.id" x-text="c.name"></option>
+        </template>
+      </select>
+      <label class="block text-xs text-slate-500 mb-1">标签</label>
+      <p class="text-[11px] text-slate-400 mb-2">点选已有标签，或输入新名称后回车加入</p>
+      <div class="flex flex-wrap gap-1.5 mb-2">
+        <template x-for="t in tags" :key="'id-'+t.id">
+          <button type="button" @click="toggleFormTag(t.id)"
+                  class="text-xs px-2 py-1 rounded-full border"
+                  :class="form.tagIds.includes(t.id) ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'">
+            <span x-text="t.name"></span>
+          </button>
+        </template>
+        <template x-for="name in form.tagNames" :key="'new-'+name">
+          <span class="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100 inline-flex items-center gap-1">
+            <span x-text="name"></span>
+            <button type="button" class="text-blue-400 hover:text-blue-700" @click="removeTagName(name)">×</button>
+          </span>
+        </template>
+        <span x-show="tags.length===0 && form.tagNames.length===0" class="text-xs text-slate-400">未选标签</span>
+      </div>
+      <input class="w-full mb-3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+             placeholder="输入新标签，回车添加" x-model="tagInput" @keydown.enter.prevent="addTagName()">
+      <label class="block text-xs text-slate-500 mb-1">备注（可填书籍ID等）</label>
+      <textarea class="w-full mb-3 px-3 py-2 border rounded-lg text-sm" rows="2" x-model="form.remark"></textarea>
+      <div class="text-red-500 text-xs min-h-4 mb-2" x-text="msg"></div>
+      <div class="flex justify-end gap-2">
+        <button type="button" @click="showCreate=false" class="border px-4 py-2 rounded-lg text-sm text-slate-500">取消</button>
+        <button type="button" @click="submitCreate()" :disabled="categories.length===0"
+                class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-40">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function app(){return{
+  list:[],total:0,page:1,size:12,keyword:'',categoryId:0,filterTagIds:[],loading:false,
+  categories:[],tags:[],tagFilterOpen:false,
+  status:{ossReady:false,ossError:'',categoryCount:0,setupComplete:false},
+  statusLoaded:false,metaLoaded:false,
+  showCreate:false,msg:'',tagInput:'',
+  form:{assetName:'',categoryId:0,tagIds:[],tagNames:[],remark:''},
+
+  totalPages(){return Math.max(1,Math.ceil(this.total/this.size))},
+  hasFilter(){return !!(this.keyword||this.categoryId||this.filterTagIds.length)},
+
+  async request(url,opts){
+    const res=await fetch(url,opts)
+    if(res.status===401){
+      location.href='/login'
+      const err=new Error('unauthorized')
+      err.unauthorized=true
+      throw err
+    }
+    return res.json()
+  },
+
+  async init(){
+    await Promise.all([this.loadStatus(),this.loadMeta(),this.load()])
+  },
+
+  async loadStatus(){
+    try{
+      const d=await this.request('/api/setup/status')
+      if(d.code===0&&d.data){
+        this.status={
+          ossReady:!!d.data.ossReady,
+          ossError:d.data.ossError||'',
+          categoryCount:d.data.categoryCount||0,
+          setupComplete:!!d.data.setupComplete
+        }
+      }
+    }catch(e){
+      if(!e.unauthorized) console.error(e)
+    }
+    this.statusLoaded=true
+  },
+
+  async loadMeta(){
+    try{
+      const [c,t]=await Promise.all([this.request('/api/categories'),this.request('/api/tags')])
+      if(c.code===0) this.categories=c.data||[]
+      if(t.code===0) this.tags=t.data||[]
+    }catch(e){
+      if(!e.unauthorized) console.error(e)
+    }
+    this.metaLoaded=true
+  },
+
+  async load(){
+    this.loading=true
+    try{
+      const q=new URLSearchParams({keyword:this.keyword,page:this.page,size:this.size})
+      if(this.categoryId) q.set('categoryId',String(this.categoryId))
+      if(this.filterTagIds.length) q.set('tagIds',this.filterTagIds.join(','))
+      const d=await this.request('/api/asset/list?'+q)
+      if(d.code===0){this.list=d.data.list||[];this.total=d.data.total||0}
+      else{this.list=[];this.total=0}
+    }catch(e){
+      if(!e.unauthorized) console.error(e)
+    }
+    this.loading=false
+  },
+
+  search(){this.page=1;this.tagFilterOpen=false;this.load()},
+  reset(){this.keyword='';this.categoryId=0;this.filterTagIds=[];this.page=1;this.tagFilterOpen=false;this.load()},
+  prev(){if(this.page>1){this.page--;this.load()}},
+  next(){if(this.page<this.totalPages()){this.page++;this.load()}},
+
+  toggleFilterTag(id){
+    if(this.filterTagIds.includes(id)) this.filterTagIds=this.filterTagIds.filter(x=>x!==id)
+    else this.filterTagIds=this.filterTagIds.concat([id])
+  },
+
+  openCreate(){
+    if(!this.categories.length) return
+    this.form={assetName:'',categoryId:this.categories[0].id,tagIds:[],tagNames:[],remark:''}
+    this.tagInput=''
+    this.msg=''
+    this.showCreate=true
+  },
+
+  toggleFormTag(id){
+    if(this.form.tagIds.includes(id)) this.form.tagIds=this.form.tagIds.filter(x=>x!==id)
+    else this.form.tagIds=this.form.tagIds.concat([id])
+  },
+
+  addTagName(){
+    const name=(this.tagInput||'').trim()
+    if(!name) return
+    this.tagInput=''
+    const exist=this.tags.find(t=>t.name===name)
+    if(exist){
+      if(!this.form.tagIds.includes(exist.id)) this.form.tagIds=this.form.tagIds.concat([exist.id])
+      return
+    }
+    if(!this.form.tagNames.includes(name)) this.form.tagNames=this.form.tagNames.concat([name])
+  },
+
+  removeTagName(name){
+    this.form.tagNames=this.form.tagNames.filter(n=>n!==name)
+  },
+
+  async submitCreate(){
+    this.msg=''
+    if((this.tagInput||'').trim()) this.addTagName()
+    if(!this.form.assetName.trim()){this.msg='请填写素材名称';return}
+    if(!this.form.categoryId){this.msg='请选择分类';return}
+    const body={
+      assetName:this.form.assetName.trim(),
+      categoryId:Number(this.form.categoryId),
+      tagIds:this.form.tagIds.slice(),
+      tagNames:this.form.tagNames.slice(),
+      remark:this.form.remark||''
+    }
+    try{
+      const d=await this.request('/api/asset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      if(d.code===0){
+        this.showCreate=false
+        await this.loadMeta()
+        this.search()
+      }else{
+        this.msg=d.msg||'保存失败'
+      }
+    }catch(e){
+      if(!e.unauthorized) this.msg='请求失败：'+e.message
+    }
+  },
+
+  async remove(item){
+    if(!confirm('确定删除素材「'+item.assetName+'」？\n会同时删除该素材下所有 OSS 文件，不可恢复。')) return
+    try{
+      const d=await this.request('/api/asset/'+item.id,{method:'DELETE'})
+      if(d.code===0) this.load()
+      else alert(d.msg||'删除失败')
+    }catch(e){
+      if(!e.unauthorized) alert('请求失败：'+e.message)
+    }
+  },
+
+  async logout(){await fetch('/api/logout',{method:'POST'});location.href='/login'}
+}}
+</script>
+</body>
+</html>

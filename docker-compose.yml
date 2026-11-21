@@ -1,0 +1,17 @@
+services:
+  assethub:
+    image: blackcatzoo/assethub:latest
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      # SQLite 持久化；新卷为空库。要清空：docker compose down -v
+      - assethub-data:/data
+      # 可选：用宿主机配置覆盖（账号 / 种子 OSS）
+      # - ./config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+
+volumes:
+  assethub-data:

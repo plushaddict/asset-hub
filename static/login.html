@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AssetHub 登录</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}</style>
+</head>
+<body class="min-h-screen bg-slate-100 flex items-center justify-center">
+<div class="w-80 bg-white rounded-xl shadow-lg p-6" x-data="app()">
+  <div class="text-center mb-6">
+    <div class="text-2xl font-bold text-slate-800">AssetHub</div>
+    <div class="text-xs text-slate-400 mt-1">素材资产管理系统</div>
+  </div>
+  <label class="block text-xs text-slate-500 mb-1">账号</label>
+  <input class="w-full mb-3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" x-model="u" @keyup.enter="login()">
+  <label class="block text-xs text-slate-500 mb-1">密码</label>
+  <input type="password" class="w-full mb-3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" x-model="p" @keyup.enter="login()">
+  <div class="text-red-500 text-xs h-4 mb-1" x-text="msg"></div>
+  <button class="w-full bg-slate-800 text-white py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-50"
+          :disabled="loading" @click="login()">
+    <span x-show="!loading">登录</span><span x-show="loading">登录中…</span>
+  </button>
+</div>
+<script>
+function app(){return{
+  u:'',p:'',msg:'',loading:false,
+  async login(){
+    if(!this.u||!this.p){this.msg='请填写账号和密码';return}
+    this.loading=true;this.msg=''
+    try{
+      const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:this.u,password:this.p})})
+      const d=await res.json()
+      if(d.code===0){location.href='/'}else{this.msg=d.msg}
+    }catch(e){this.msg='请求失败：'+e.message}
+    this.loading=false
+  }
+}}
+</script>
+</body>
+</html>

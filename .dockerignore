@@ -1,0 +1,13 @@
+.git
+.github
+.superpowers
+.idea
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.db-journal
+assethub
+assethub-*
+.DS_Store
+*.md
+!README.md

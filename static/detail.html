@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>素材详情 - AssetHub</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}[x-cloak]{display:none!important}</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+<div x-data="app()" x-init="load()">
+
+  <div x-cloak x-show="statusLoaded && !status.setupComplete" class="sticky top-0 z-30 bg-amber-50 border-b border-amber-200">
+    <div class="max-w-6xl mx-auto px-6 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div class="text-sm font-medium text-amber-900">配置尚未完成</div>
+      <div class="flex flex-wrap items-center gap-2 text-sm">
+        <div x-show="!status.ossReady" class="flex items-center gap-2 bg-white/80 border border-amber-200 rounded-lg px-3 py-1.5">
+          <span class="text-amber-900">请先修改 OSS 配置</span>
+          <span class="text-xs text-red-500 max-w-[280px] truncate" x-show="status.ossError" :title="status.ossError" x-text="status.ossError"></span>
+          <button type="button" @click="location.href='/settings?tab=oss'" class="text-xs text-white bg-amber-600 hover:bg-amber-700 px-2 py-1 rounded">去设置</button>
+        </div>
+        <div x-show="status.categoryCount<1" class="flex items-center gap-2 bg-white/80 border border-amber-200 rounded-lg px-3 py-1.5">
+          <span class="text-amber-900">缺少分类</span>
+          <button type="button" @click="location.href='/settings?tab=category'" class="text-xs text-white bg-amber-600 hover:bg-amber-700 px-2 py-1 rounded">去添加</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-6xl mx-auto p-6">
+
+  <div class="flex items-center justify-between mb-4">
+    <a href="/" class="text-sm text-slate-500 hover:text-slate-800">← 返回素材列表</a>
+    <div class="flex items-center gap-3">
+      <a href="/settings" class="text-sm text-slate-500 hover:text-slate-800">设置</a>
+      <button type="button" @click="logout()" class="text-sm text-slate-400 hover:text-slate-700">退出</button>
+    </div>
+  </div>
+
+  <div x-show="loading" class="text-center text-slate-400 py-16 text-sm">加载中…</div>
+
+  <div x-cloak x-show="!loading && asset">
+    <!-- 素材信息 -->
+    <div class="bg-white rounded-xl shadow-sm p-5 mb-5">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="text-xl font-bold text-slate-800" x-text="asset.assetName"></h1>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" x-text="asset.categoryName || '未分类'"></span>
+          </div>
+          <div class="flex flex-wrap items-center gap-1 mt-2 text-xs">
+            <span class="text-slate-400">标签</span>
+            <template x-if="!(asset.tags && asset.tags.length)">
+              <span class="text-slate-400">无</span>
+            </template>
+            <template x-for="t in (asset.tags || [])" :key="t.id">
+              <span class="px-1.5 py-0.5 rounded bg-blue-50 text-blue-600" x-text="t.name"></span>
+            </template>
+          </div>
+          <div class="text-xs text-slate-400 mt-1">备注：<span x-text="asset.remark || '无'"></span></div>
+          <div class="text-[11px] text-slate-400 mt-1">创建于 <span x-text="asset.createTime"></span></div>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <button type="button" @click="openEdit()" class="border px-3 py-1.5 rounded-lg text-xs text-slate-600 hover:bg-slate-50">编辑信息</button>
+          <button type="button" @click="removeAsset()" class="border border-red-200 text-red-500 px-3 py-1.5 rounded-lg text-xs hover:bg-red-50">删除素材</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 文件列表 -->
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b bg-slate-50 gap-3">
+        <div class="text-sm font-medium text-slate-700">格式文件（<span x-text="files.length"></span>）</div>
+        <button type="button" @click="openUpload()" class="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-slate-700">+ 添加格式文件</button>
+      </div>
+      <div x-cloak x-show="statusLoaded && !status.ossReady" class="px-5 py-2 text-xs text-amber-800 bg-amber-50 border-b border-amber-100">
+        OSS 未就绪，暂时无法上传。
+        <button type="button" class="underline font-medium" @click="location.href='/settings?tab=oss'">去设置</button>
+      </div>
+
+      <div x-show="files.length===0" class="px-5 py-10 text-center text-slate-400 text-sm">
+        还没有文件，点击右上角「添加格式文件」上传 png / svg / webp 等
+      </div>
+
+      <table class="w-full text-sm" x-show="files.length>0">
+        <thead class="text-xs text-slate-500 bg-white">
+          <tr class="border-b">
+            <th class="px-5 py-2 text-left w-20">预览</th>
+            <th class="px-3 py-2 text-left w-36">文件名</th>
+            <th class="px-3 py-2 text-left w-24">尺寸</th>
+            <th class="px-3 py-2 text-left w-20">大小</th>
+            <th class="px-3 py-2 text-left">访问链接</th>
+            <th class="px-3 py-2 text-right w-44">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="f in files" :key="f.id">
+            <tr class="border-b last:border-0 hover:bg-slate-50">
+              <td class="px-5 py-2">
+                <div class="w-12 h-12 bg-slate-50 rounded flex items-center justify-center overflow-hidden">
+                  <img :src="f.url" class="max-w-full max-h-full object-contain" alt="">
+                </div>
+              </td>
+              <td class="px-3 py-2">
+                <div class="flex items-center gap-1.5">
+                  <span x-text="f.fileName" class="text-slate-700"></span>
+                  <span x-show="f.isPrimary===1" class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600">主图</span>
+                </div>
+              </td>
+              <td class="px-3 py-2 text-slate-500 text-xs" x-text="f.width?f.width+'×'+f.height:'—'"></td>
+              <td class="px-3 py-2 text-slate-500 text-xs" x-text="fmtSize(f.fileSize)"></td>
+              <td class="px-3 py-2">
+                <div class="flex items-center gap-2">
+                  <input class="flex-1 min-w-0 px-2 py-1 border rounded text-[11px] text-slate-600 bg-slate-50" :value="f.url" readonly @focus="$event.target.select()">
+                  <button type="button" @click="copy(f.url)" class="shrink-0 bg-blue-500 text-white px-2.5 py-1 rounded text-[11px] hover:bg-blue-600">复制</button>
+                </div>
+              </td>
+              <td class="px-3 py-2 text-right whitespace-nowrap">
+                <button type="button" @click="setPrimary(f)" x-show="f.isPrimary!==1" class="text-[11px] text-amber-600 hover:underline">设为主图</button>
+                <button type="button" @click="removeFile(f)" class="text-[11px] text-red-500 hover:underline ml-2">删除</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="text-[11px] text-slate-400 mt-3 leading-5">
+      提示：私有 Bucket 返回的是带时效签名链接，过期后刷新本页即可获取新链接；业务侧请调用
+      <span class="font-mono bg-white px-1 rounded">GET /api/business/asset?assetName=xxx</span> 实时获取。
+    </div>
+  </div>
+
+  </div>
+
+  <!-- 上传弹窗 -->
+  <div x-cloak x-show="showUpload" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-xl shadow-xl w-[440px] max-w-full p-5" @click.outside="showUpload=false">
+      <h3 class="font-bold text-slate-800 mb-1">添加格式文件</h3>
+      <p class="text-xs text-slate-400 mb-4">同一素材下每种后缀只能有一个文件；新上传默认保存为 <span x-text="asset?asset.assetName:''"></span>.[后缀]</p>
+      <div x-cloak x-show="statusLoaded && !status.ossReady" class="mb-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        OSS 未就绪，上传会失败。
+        <button type="button" class="underline font-medium" @click="location.href='/settings?tab=oss'">去设置</button>
+      </div>
+      <div class="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-blue-400"
+           @dragover.prevent @drop.prevent="onDrop($event)" @click="$refs.fileInput.click()">
+        <div class="text-sm text-slate-600" x-text="file?file.name:'点击选择文件，或拖拽到此处'"></div>
+        <div class="text-[11px] text-slate-400 mt-1" x-show="file" x-text="file?fmtSize(file.size):''"></div>
+        <div class="text-[11px] text-slate-400 mt-1" x-show="!file">支持 png / jpg / jpeg / svg / webp / ico / gif，≤20MB</div>
+        <input type="file" class="hidden" x-ref="fileInput" accept=".png,.jpg,.jpeg,.svg,.webp,.ico,.gif" @change="pick($event)">
+      </div>
+      <div class="text-red-500 text-xs min-h-4 mt-2" x-text="msg"></div>
+      <div x-show="uploadOssHint" class="text-xs text-amber-800 mb-1">
+        <button type="button" class="underline font-medium" @click="location.href='/settings?tab=oss'">前往设置配置 OSS</button>
+      </div>
+      <div class="flex justify-end gap-2 mt-2">
+        <button type="button" @click="showUpload=false" class="border px-4 py-2 rounded-lg text-sm text-slate-500">取消</button>
+        <button type="button" @click="doUpload()" :disabled="uploading || (statusLoaded && !status.ossReady)" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+          <span x-show="!uploading">上传</span><span x-show="uploading">上传中…</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑素材弹窗 -->
+  <div x-cloak x-show="showEdit" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-xl shadow-xl w-[480px] max-w-full max-h-[90vh] overflow-y-auto p-5" @click.outside="showEdit=false">
+      <h3 class="font-bold text-slate-800 mb-4">编辑素材信息</h3>
+      <label class="block text-xs text-slate-500 mb-1">素材名称</label>
+      <input class="w-full mb-3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" x-model="editForm.assetName">
+      <label class="block text-xs text-slate-500 mb-1">分类 *</label>
+      <select class="w-full mb-3 px-3 py-2 border rounded-lg text-sm bg-white" x-model.number="editForm.categoryId" :disabled="categories.length===0">
+        <option value="0" disabled>请选择分类</option>
+        <template x-for="c in categories" :key="c.id">
+          <option :value="c.id" x-text="c.name"></option>
+        </template>
+      </select>
+      <p x-show="categories.length===0" class="text-xs text-amber-700 mb-3">
+        还没有分类。
+        <button type="button" class="underline" @click="location.href='/settings?tab=category'">去设置添加</button>
+      </p>
+      <label class="block text-xs text-slate-500 mb-1">标签</label>
+      <p class="text-[11px] text-slate-400 mb-2">点选已有标签，或输入新名称后回车加入。保存后按当前选择全量替换。</p>
+      <div class="flex flex-wrap gap-1.5 mb-2">
+        <template x-for="t in tags" :key="'id-'+t.id">
+          <button type="button" @click="toggleEditTag(t.id)"
+                  class="text-xs px-2 py-1 rounded-full border"
+                  :class="editForm.tagIds.includes(t.id) ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'">
+            <span x-text="t.name"></span>
+          </button>
+        </template>
+        <template x-for="name in editForm.tagNames" :key="'new-'+name">
+          <span class="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100 inline-flex items-center gap-1">
+            <span x-text="name"></span>
+            <button type="button" class="text-blue-400 hover:text-blue-700" @click="removeEditTagName(name)">×</button>
+          </span>
+        </template>
+        <span x-show="tags.length===0 && editForm.tagNames.length===0" class="text-xs text-slate-400">未选标签</span>
+      </div>
+      <input class="w-full mb-3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+             placeholder="输入新标签，回车添加" x-model="tagInput" @keydown.enter.prevent="addEditTagName()">
+      <label class="block text-xs text-slate-500 mb-1">备注</label>
+      <textarea class="w-full mb-3 px-3 py-2 border rounded-lg text-sm" rows="2" x-model="editForm.remark"></textarea>
+      <label class="block text-xs text-slate-500 mb-1">排序（越大越靠前）</label>
+      <input type="number" class="w-full mb-3 px-3 py-2 border rounded-lg text-sm" x-model.number="editForm.sort">
+      <div class="text-red-500 text-xs min-h-4 mb-2" x-text="msg"></div>
+      <div class="flex justify-end gap-2">
+        <button type="button" @click="showEdit=false" class="border px-4 py-2 rounded-lg text-sm text-slate-500">取消</button>
+        <button type="button" @click="submitEdit()" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function app(){return{
+  asset:null, files:[], loading:true, assetId:0,
+  categories:[], tags:[],
+  status:{ossReady:false,ossError:'',categoryCount:0,setupComplete:false},
+  statusLoaded:false,
+  showUpload:false, file:null, uploading:false, uploadOssHint:false,
+  showEdit:false, tagInput:'',
+  editForm:{assetName:'',categoryId:0,tagIds:[],tagNames:[],remark:'',sort:0},
+  msg:'',
+
+  fmtSize(n){ if(!n)return '—'; if(n<1024)return n+' B'; if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(2)+' MB' },
+
+  async request(url,opts){
+    const res=await fetch(url,opts)
+    if(res.status===401){
+      location.href='/login'
+      const err=new Error('unauthorized')
+      err.unauthorized=true
+      throw err
+    }
+    return res.json()
+  },
+
+  async load(){
+    const seg=location.pathname.split('/').filter(Boolean)
+    this.assetId=seg[seg.length-1]
+    try{
+      await Promise.all([this.loadAsset(),this.loadStatus(),this.loadMeta()])
+    }catch(e){
+      if(!e.unauthorized) console.error(e)
+    }
+    this.loading=false
+  },
+
+  async loadAsset(){
+    const d=await this.request('/api/asset/'+this.assetId)
+    if(d.code===0){this.asset=d.data.asset;this.files=d.data.files||[]}
+    else alert(d.msg||'素材不存在')
+  },
+
+  async loadStatus(){
+    try{
+      const d=await this.request('/api/setup/status')
+      if(d.code===0&&d.data){
+        this.status={
+          ossReady:!!d.data.ossReady,
+          ossError:d.data.ossError||'',
+          categoryCount:d.data.categoryCount||0,
+          setupComplete:!!d.data.setupComplete
+        }
+      }
+    }catch(e){
+      if(!e.unauthorized) console.error(e)
+    }
+    this.statusLoaded=true
+  },
+
+  async loadMeta(){
+    const [c,t]=await Promise.all([this.request('/api/categories'),this.request('/api/tags')])
+    if(c.code===0) this.categories=c.data||[]
+    if(t.code===0) this.tags=t.data||[]
+  },
+
+  async openUpload(){
+    this.file=null
+    this.msg=''
+    this.uploadOssHint=false
+    this.showUpload=true
+    this.loadStatus()
+  },
+  pick(e){this.msg='';this.uploadOssHint=false;this.file=e.target.files[0]||null},
+  onDrop(e){this.msg='';this.uploadOssHint=false;this.file=(e.dataTransfer.files||[])[0]||null},
+
+  looksLikeOss(msg){
+    return !!(msg&&(msg.indexOf('OSS')>=0||msg.indexOf('设置')>=0))
+  },
+
+  async doUpload(){
+    if(!this.file){this.msg='请选择文件';return}
+    if(this.statusLoaded&&!this.status.ossReady){
+      this.msg='OSS 未就绪，请先到设置中配置'
+      this.uploadOssHint=true
+      return
+    }
+    this.uploading=true
+    this.msg=''
+    this.uploadOssHint=false
+    const fd=new FormData(); fd.append('file',this.file)
+    try{
+      const res=await fetch('/api/asset/'+this.assetId+'/files',{method:'POST',body:fd})
+      if(res.status===401){location.href='/login';this.uploading=false;return}
+      const d=await res.json()
+      if(d.code===0){this.showUpload=false;await this.loadAsset()}
+      else{
+        this.msg=d.msg||'上传失败'
+        this.uploadOssHint=this.looksLikeOss(d.msg)||(this.statusLoaded&&!this.status.ossReady)
+      }
+    }catch(e){this.msg='上传失败：'+e.message}
+    this.uploading=false
+  },
+
+  async copy(text){
+    try{ await navigator.clipboard.writeText(text) }catch(e){
+      const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()
+    }
+    this.toast('已复制链接')
+  },
+  toast(msg){
+    const el=document.createElement('div')
+    el.className='fixed top-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs px-4 py-2 rounded-lg shadow-lg z-[999]'
+    el.textContent=msg; document.body.appendChild(el)
+    setTimeout(()=>el.remove(),1500)
+  },
+
+  async setPrimary(f){
+    try{
+      const d=await this.request('/api/asset/'+this.assetId+'/files/'+f.id+'/primary',{method:'PUT'})
+      if(d.code===0) this.loadAsset(); else alert(d.msg||'设置失败')
+    }catch(e){
+      if(!e.unauthorized) alert('请求失败：'+e.message)
+    }
+  },
+
+  async removeFile(f){
+    if(!confirm('确定删除文件「'+f.fileName+'」？OSS 上的文件也会一并删除。')) return
+    try{
+      const d=await this.request('/api/asset/'+this.assetId+'/files/'+f.id,{method:'DELETE'})
+      if(d.code===0) this.loadAsset(); else alert(d.msg||'删除失败')
+    }catch(e){
+      if(!e.unauthorized) alert('请求失败：'+e.message)
+    }
+  },
+
+  openEdit(){
+    this.msg=''
+    this.tagInput=''
+    const tags=(this.asset&&this.asset.tags)||[]
+    this.editForm={
+      assetName:this.asset.assetName,
+      categoryId:this.asset.categoryId||0,
+      tagIds:tags.map(t=>t.id),
+      tagNames:[],
+      remark:this.asset.remark||'',
+      sort:this.asset.sort||0
+    }
+    this.showEdit=true
+  },
+
+  toggleEditTag(id){
+    if(this.editForm.tagIds.includes(id)) this.editForm.tagIds=this.editForm.tagIds.filter(x=>x!==id)
+    else this.editForm.tagIds=this.editForm.tagIds.concat([id])
+  },
+
+  addEditTagName(){
+    const name=(this.tagInput||'').trim()
+    if(!name) return
+    this.tagInput=''
+    const exist=this.tags.find(t=>t.name===name)
+    if(exist){
+      if(!this.editForm.tagIds.includes(exist.id)) this.editForm.tagIds=this.editForm.tagIds.concat([exist.id])
+      return
+    }
+    if(!this.editForm.tagNames.includes(name)) this.editForm.tagNames=this.editForm.tagNames.concat([name])
+  },
+
+  removeEditTagName(name){
+    this.editForm.tagNames=this.editForm.tagNames.filter(n=>n!==name)
+  },
+
+  async submitEdit(){
+    this.msg=''
+    if((this.tagInput||'').trim()) this.addEditTagName()
+    if(!(this.editForm.assetName||'').trim()){this.msg='请填写素材名称';return}
+    if(!this.editForm.categoryId){this.msg='请选择分类';return}
+    // 始终带上 tagIds / tagNames，按当前选择全量替换；空数组表示清空。
+    const body={
+      assetName:this.editForm.assetName.trim(),
+      categoryId:Number(this.editForm.categoryId),
+      remark:this.editForm.remark||'',
+      sort:Number(this.editForm.sort)||0,
+      tagIds:this.editForm.tagIds.slice(),
+      tagNames:this.editForm.tagNames.slice()
+    }
+    try{
+      const d=await this.request('/api/asset/'+this.assetId,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      })
+      if(d.code===0){
+        this.showEdit=false
+        await Promise.all([this.loadAsset(),this.loadMeta()])
+      }else{
+        this.msg=d.msg||'保存失败'
+      }
+    }catch(e){
+      if(!e.unauthorized) this.msg='请求失败：'+e.message
+    }
+  },
+
+  async removeAsset(){
+    if(!confirm('确定删除素材「'+this.asset.assetName+'」？\n所有格式文件将从 OSS 删除，不可恢复。')) return
+    try{
+      const d=await this.request('/api/asset/'+this.assetId,{method:'DELETE'})
+      if(d.code===0) location.href='/'
+      else alert(d.msg||'删除失败')
+    }catch(e){
+      if(!e.unauthorized) alert('请求失败：'+e.message)
+    }
+  },
+
+  async logout(){await fetch('/api/logout',{method:'POST'});location.href='/login'}
+}}
+</script>
+</body>
+</html>

@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>系统设置 - AssetHub</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}[x-cloak]{display:none!important}</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+<div class="max-w-5xl mx-auto p-6" x-data="app()" x-init="init()">
+
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-800">系统设置</h1>
+      <p class="text-xs text-slate-400 mt-1">OSS 连接、分类前缀与标签。上传路径由分类前缀决定。</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="/" class="border px-4 py-2 rounded-lg text-sm text-slate-500 hover:bg-white">返回列表</a>
+      <button @click="logout()" class="border px-4 py-2 rounded-lg text-sm text-slate-500 hover:bg-white">退出</button>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm p-4 mb-5" x-cloak x-show="!loading">
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-sm font-medium text-slate-700">配置清单</div>
+      <div class="text-xs" :class="status.setupComplete ? 'text-emerald-600' : 'text-amber-600'"
+           x-text="status.setupComplete ? '必填项已完成' : '完成后即可上传素材'"></div>
+    </div>
+    <div class="grid sm:grid-cols-2 gap-3 text-sm">
+      <button type="button" @click="setTab('oss')"
+              class="flex items-start gap-2 text-left rounded-lg border px-3 py-2 hover:bg-slate-50"
+              :class="tab==='oss' ? 'border-slate-300' : 'border-slate-100'">
+        <span class="mt-0.5 inline-flex w-5 h-5 shrink-0 items-center justify-center rounded-full text-xs"
+              :class="status.ossReady ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200 text-slate-400'"
+              x-text="status.ossReady ? '✓' : '·'"></span>
+        <span>
+          <span class="text-slate-700" x-text="status.ossReady ? 'OSS 已就绪' : '请先修改 OSS 配置'"></span>
+          <span class="block text-xs text-red-500 mt-0.5" x-show="!status.ossReady && status.ossError" x-text="status.ossError"></span>
+        </span>
+      </button>
+      <button type="button" @click="setTab('category')"
+              class="flex items-start gap-2 text-left rounded-lg border px-3 py-2 hover:bg-slate-50"
+              :class="tab==='category' ? 'border-slate-300' : 'border-slate-100'">
+        <span class="mt-0.5 inline-flex w-5 h-5 shrink-0 items-center justify-center rounded-full text-xs"
+              :class="status.categoryCount>=1 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200 text-slate-400'"
+              x-text="status.categoryCount>=1 ? '✓' : '·'"></span>
+        <span class="text-slate-700">
+          至少 1 个分类
+          <span class="text-xs text-slate-400">（当前 <span x-text="status.categoryCount"></span>）</span>
+        </span>
+      </button>
+    </div>
+  </div>
+
+  <div class="flex gap-1 bg-white rounded-xl shadow-sm p-1 mb-5 w-fit">
+    <button type="button" @click="setTab('oss')" class="px-4 py-1.5 rounded-lg text-sm"
+            :class="tab==='oss' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'">OSS</button>
+    <button type="button" @click="setTab('category')" class="px-4 py-1.5 rounded-lg text-sm"
+            :class="tab==='category' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'">分类</button>
+    <button type="button" @click="setTab('tag')" class="px-4 py-1.5 rounded-lg text-sm"
+            :class="tab==='tag' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'">标签</button>
+  </div>
+
+  <div x-show="loading" class="text-center text-slate-400 py-10 text-sm">加载中…</div>
+
+  <!-- OSS -->
+  <div x-cloak x-show="!loading && tab==='oss'" class="bg-white rounded-xl shadow-sm p-5">
+    <h2 class="font-medium text-slate-800 mb-1">OSS 配置</h2>
+    <p class="text-xs text-slate-400 mb-3">保存时会试连 Bucket。AccessKey、Secret、businessToken 留空表示不修改，不会把脱敏串写回。</p>
+
+    <div class="mb-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 leading-relaxed">
+      <div class="font-medium text-slate-700 mb-2">参数从哪里获取？（阿里云 OSS）</div>
+      <ol class="list-decimal pl-4 space-y-1.5">
+        <li>
+          打开
+          <a class="text-blue-600 hover:underline" href="https://oss.console.aliyun.com/" target="_blank" rel="noopener">对象存储 OSS 控制台</a>
+          → 创建或进入目标 <strong>Bucket</strong>。
+        </li>
+        <li>
+          在 Bucket「概览」看 <strong>地域 Endpoint</strong>（外网，不要带 <code class="bg-white px-1 rounded">https://</code>）和 <strong>Bucket 名称</strong>。
+        </li>
+        <li>
+          <strong>URL 前缀</strong>：打开 Bucket →「概览」→「访问端口」表里的
+          <strong>Bucket 域名</strong>列（不要用「地域节点 / Endpoint」那一列）。
+          取<strong>外网访问</strong>对应域名，前面加 <code class="bg-white px-1 rounded">https://</code>、末尾加 <code class="bg-white px-1 rounded">/</code>，例如
+          <code class="bg-white px-1 rounded">https://my-bucket.oss-cn-beijing.aliyuncs.com/</code>。
+          若已绑 CNAME / 自定义域名，也可填该行的域名（同样加 https:// 与 /）。
+          <strong>不要</strong>填内网（含 <code class="bg-white px-1 rounded">-internal</code>）域名。公共读时用此前缀拼访问链接。
+        </li>
+        <li>
+          <strong>AccessKey</strong>：
+          <a class="text-blue-600 hover:underline" href="https://ram.console.aliyun.com/manage/ak" target="_blank" rel="noopener">RAM 访问控制 → 用户 → 创建 AccessKey</a>
+          （推荐子账号，勿用主账号 AK；Secret 只在创建时显示一次）。需具备该 Bucket 的读写权限（保存试连会调用 GetBucketInfo）。
+        </li>
+        <li>
+          <strong>私有读 / 签名有效期</strong>：与 Bucket 读写 ACL 一致。Bucket 为私有时勾选「私有读」，链接带时效签名；公共读可取消勾选，直接用 URL 前缀。
+        </li>
+        <li>
+          <strong>businessToken</strong>：本系统自建口令，不是阿里云参数。业务方调 <code class="bg-white px-1 rounded">/api/business/asset</code> 时用 query <code class="bg-white px-1 rounded">token</code> 或请求头 <code class="bg-white px-1 rounded">X-Asset-Token</code>；留空则不校验。
+        </li>
+      </ol>
+    </div>
+
+    <form @submit.prevent="saveOss()" autocomplete="off">
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Endpoint</label>
+          <input class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                 placeholder="oss-cn-beijing.aliyuncs.com" x-model="form.endpoint" spellcheck="false" autocomplete="off">
+          <p class="text-xs text-slate-400 mt-1">OSS 控制台 → Bucket 概览 → 地域节点（外网）。不要写 https://。</p>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Bucket</label>
+          <input class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                 x-model="form.bucket" spellcheck="false" autocomplete="off">
+          <p class="text-xs text-slate-400 mt-1">OSS 控制台中的 Bucket 名称，与创建时填写的名称一致。</p>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs text-slate-500 mb-1">URL 前缀</label>
+          <input class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                 placeholder="https://bucket.oss-cn-beijing.aliyuncs.com/" x-model="form.urlPrefix" spellcheck="false" autocomplete="off">
+          <p class="text-xs text-slate-400 mt-1">来自「访问端口 → Bucket 域名（外网）」+ https:// + 末尾 /；有 CNAME 可填自定义域名。勿用 Endpoint 或内网域名。</p>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">AccessKey ID</label>
+          <input type="password" class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                 placeholder="留空则不修改" x-model="form.accessKeyId" autocomplete="new-password" spellcheck="false">
+          <p class="text-xs text-slate-400 mt-1" x-text="hints.accessKeyIdMasked ? ('当前：' + hints.accessKeyIdMasked) : '当前：未设置'"></p>
+          <p class="text-xs text-slate-400 mt-0.5">RAM 控制台创建 AccessKey 后复制 ID；推荐使用仅授权本 Bucket 的子账号。</p>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">AccessKey Secret</label>
+          <input type="password" class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                 placeholder="留空则不修改" x-model="form.accessKeySecret" autocomplete="new-password" spellcheck="false">
+          <p class="text-xs text-slate-400 mt-1" x-text="hints.accessKeySecretSet ? '当前：已设置' : '当前：未设置'"></p>
+          <p class="text-xs text-slate-400 mt-0.5">与 AccessKey ID 成对出现，仅创建时可见一次，请妥善保存。</p>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">签名有效期（秒）</label>
+          <input type="number" min="1" class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                 x-model.number="form.signedExpire">
+          <p class="text-xs text-slate-400 mt-1">仅私有读时生效：签名 URL 多久过期。一般 3600（1 小时）即可。</p>
+        </div>
+        <div class="flex flex-col justify-end pb-1">
+          <label class="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" class="rounded border-slate-300" x-model="form.private">
+            私有读（返回签名 URL）
+          </label>
+          <p class="text-xs text-slate-400 mt-1">与 Bucket ACL 一致：私有 Bucket 请勾选；公共读可取消，直接拼 URL 前缀。</p>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs text-slate-500 mb-1">businessToken（可选，业务查询接口）</label>
+          <input type="password" class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-slate-50"
+                 placeholder="留空则不修改" x-model="form.businessToken" :disabled="form.clearBusinessToken" autocomplete="new-password" spellcheck="false">
+          <p class="text-xs text-slate-400 mt-1" x-text="hints.businessTokenSet ? ('当前：已设置 ' + (hints.businessTokenMasked || '****')) : '当前：未设置'"></p>
+          <p class="text-xs text-slate-400 mt-0.5">本系统自定义口令，非阿里云参数。业务方请求 /api/business/asset 时携带；留空则不校验。</p>
+          <label class="flex items-center gap-2 text-sm text-slate-600 mt-2">
+            <input type="checkbox" class="rounded border-slate-300" x-model="form.clearBusinessToken">
+            清除 businessToken
+          </label>
+          <p class="text-xs text-slate-400 mt-1">勾选后保存将清空 token，业务接口不再校验。留空且不勾选则保持原值。</p>
+        </div>
+      </div>
+      <div x-cloak x-show="ossMsg" class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 leading-relaxed whitespace-pre-wrap" x-text="ossMsg"></div>
+      <div x-cloak x-show="ossOk" class="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" x-text="ossOk"></div>
+      <div class="flex justify-end mt-2">
+        <button type="submit" :disabled="savingOss"
+                class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-50"
+                x-text="savingOss ? '保存中…' : '保存 OSS'"></button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 分类 -->
+  <div x-cloak x-show="!loading && tab==='category'" class="space-y-4">
+    <form class="bg-white rounded-xl shadow-sm p-5" @submit.prevent="saveCategory()" autocomplete="off">
+      <h2 class="font-medium text-slate-800 mb-1" x-text="catForm.id ? '编辑分类' : '新增分类'"></h2>
+      <p class="text-xs text-slate-400 mb-4">前缀末尾没有 / 时会自动补上。有素材的分类不能删除。</p>
+      <div class="grid sm:grid-cols-3 gap-3">
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">名称 *</label>
+          <input class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                 x-model="catForm.name" placeholder="图标">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">OSS 前缀 *</label>
+          <input class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                 x-model="catForm.ossPrefix" placeholder="icon/" spellcheck="false">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">排序</label>
+          <input type="number" class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                 x-model.number="catForm.sort">
+        </div>
+      </div>
+      <div class="text-red-500 text-xs min-h-4 mt-3" x-text="catMsg"></div>
+      <div class="flex justify-end gap-2 mt-2">
+        <button type="button" x-show="catForm.id" @click="resetCategory()" class="border px-4 py-2 rounded-lg text-sm text-slate-500">取消</button>
+        <button type="submit" :disabled="catSaving"
+                class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-50"
+                x-text="catSaving ? '保存中…' : (catForm.id ? '保存修改' : '新增分类')"></button>
+      </div>
+    </form>
+
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-slate-50 text-sm font-medium text-slate-700">
+        分类（<span x-text="categories.length"></span>）
+      </div>
+      <div x-show="categories.length===0" class="px-5 py-10 text-center text-slate-400 text-sm">还没有分类</div>
+      <table class="w-full text-sm" x-show="categories.length>0">
+        <thead class="text-xs text-slate-500">
+          <tr class="border-b">
+            <th class="px-5 py-2 text-left">名称</th>
+            <th class="px-3 py-2 text-left">OSS 前缀</th>
+            <th class="px-3 py-2 text-left w-20">排序</th>
+            <th class="px-3 py-2 text-right w-32">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="c in categories" :key="c.id">
+            <tr class="border-b last:border-0" :class="catForm.id===c.id ? 'bg-blue-50' : 'hover:bg-slate-50'">
+              <td class="px-5 py-2 text-slate-800" x-text="c.name"></td>
+              <td class="px-3 py-2 text-slate-500 font-mono text-xs" x-text="c.ossPrefix"></td>
+              <td class="px-3 py-2 text-slate-500" x-text="c.sort"></td>
+              <td class="px-3 py-2 text-right text-xs">
+                <button type="button" @click="editCategory(c)" class="text-blue-600 hover:underline">编辑</button>
+                <button type="button" @click="removeCategory(c)" class="text-red-500 hover:underline ml-3">删除</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 标签 -->
+  <div x-cloak x-show="!loading && tab==='tag'" class="space-y-4">
+    <form class="bg-white rounded-xl shadow-sm p-5" @submit.prevent="saveTag()" autocomplete="off">
+      <h2 class="font-medium text-slate-800 mb-1" x-text="tagForm.id ? '编辑标签' : '新增标签'"></h2>
+      <p class="text-xs text-slate-400 mb-4">删除标签会同时解除与素材的关联。</p>
+      <label class="block text-xs text-slate-500 mb-1">名称 *</label>
+      <input class="w-full max-w-sm px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+             x-model="tagForm.name" placeholder="首页">
+      <div class="text-red-500 text-xs min-h-4 mt-3" x-text="tagMsg"></div>
+      <div class="flex justify-end gap-2 mt-2">
+        <button type="button" x-show="tagForm.id" @click="resetTag()" class="border px-4 py-2 rounded-lg text-sm text-slate-500">取消</button>
+        <button type="submit" :disabled="tagSaving"
+                class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-50"
+                x-text="tagSaving ? '保存中…' : (tagForm.id ? '保存修改' : '新增标签')"></button>
+      </div>
+    </form>
+
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b bg-slate-50 text-sm font-medium text-slate-700">
+        标签（<span x-text="tags.length"></span>）
+      </div>
+      <div x-show="tags.length===0" class="px-5 py-10 text-center text-slate-400 text-sm">还没有标签</div>
+      <table class="w-full text-sm" x-show="tags.length>0">
+        <thead class="text-xs text-slate-500">
+          <tr class="border-b">
+            <th class="px-5 py-2 text-left">名称</th>
+            <th class="px-3 py-2 text-right w-32">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="t in tags" :key="t.id">
+            <tr class="border-b last:border-0" :class="tagForm.id===t.id ? 'bg-blue-50' : 'hover:bg-slate-50'">
+              <td class="px-5 py-2 text-slate-800" x-text="t.name"></td>
+              <td class="px-3 py-2 text-right text-xs">
+                <button type="button" @click="editTag(t)" class="text-blue-600 hover:underline">编辑</button>
+                <button type="button" @click="removeTag(t)" class="text-red-500 hover:underline ml-3">删除</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+function app(){return{
+  tab:'oss',
+  loading:true,
+  status:{ossReady:false,ossError:'',categoryCount:0,setupComplete:false},
+  form:{
+    endpoint:'',bucket:'',private:true,signedExpire:3600,urlPrefix:'',
+    accessKeyId:'',accessKeySecret:'',businessToken:'',clearBusinessToken:false
+  },
+  hints:{accessKeyIdMasked:'',accessKeySecretSet:false,businessTokenSet:false,businessTokenMasked:''},
+  ossMsg:'',ossOk:'',savingOss:false,
+  categories:[],
+  catForm:{id:0,name:'',ossPrefix:'',sort:0},
+  catMsg:'',catSaving:false,
+  tags:[],
+  tagForm:{id:0,name:''},
+  tagMsg:'',tagSaving:false,
+
+  init(){
+    this.readTab()
+    window.addEventListener('hashchange',()=>this.readTab())
+    this.loadAll()
+  },
+
+  readTab(){
+    const q=new URLSearchParams(location.search).get('tab')
+    let hash=(location.hash||'').replace(/^#/,'')
+    if(hash.indexOf('tab=')===0) hash=hash.slice(4)
+    const raw=(q||hash||'').toLowerCase()
+    if(raw==='oss'||raw==='category'||raw==='tag') this.tab=raw
+  },
+
+  setTab(t){
+    this.tab=t
+    const url=new URL(location.href)
+    url.searchParams.set('tab',t)
+    url.hash=''
+    history.replaceState(null,'',url.pathname+url.search)
+  },
+
+  async request(url,opts){
+    const res=await fetch(url,opts)
+    if(res.status===401){location.href='/login';const err=new Error('unauthorized');err.unauthorized=true;throw err}
+    return res.json()
+  },
+
+  async loadAll(){
+    this.loading=true
+    try{
+      await Promise.all([this.loadSettings(),this.loadCategories(),this.loadTags()])
+    }catch(e){
+      if(!e.unauthorized) this.ossMsg='加载失败：'+e.message
+    }
+    this.loading=false
+  },
+
+  applyView(v){
+    v=v||{}
+    this.form.endpoint=v.endpoint||''
+    this.form.bucket=v.bucket||''
+    this.form.private=!!v.private
+    this.form.signedExpire=(v.signedExpire===undefined||v.signedExpire===null)?3600:v.signedExpire
+    this.form.urlPrefix=v.urlPrefix||''
+    // 密钥类输入保持空。禁止把 accessKeyIdMasked / businessTokenMasked 写入 input。
+    this.form.accessKeyId=''
+    this.form.accessKeySecret=''
+    this.form.businessToken=''
+    this.form.clearBusinessToken=false
+    this.hints.accessKeyIdMasked=v.accessKeyIdMasked||''
+    this.hints.accessKeySecretSet=!!v.accessKeySecretSet
+    this.hints.businessTokenSet=!!v.businessTokenSet
+    this.hints.businessTokenMasked=v.businessTokenMasked||''
+    this.status.ossReady=!!v.ossReady
+    this.status.ossError=v.ossError||''
+    this.status.categoryCount=v.categoryCount||0
+    this.status.setupComplete=!!v.setupComplete
+  },
+
+  async loadSettings(){
+    const d=await this.request('/api/settings')
+    if(d.code===0) this.applyView(d.data)
+    else this.ossMsg=d.msg||'读取设置失败'
+  },
+
+  async refreshStatus(){
+    const d=await this.request('/api/setup/status')
+    if(d.code!==0||!d.data) return
+    this.status.ossReady=!!d.data.ossReady
+    this.status.ossError=d.data.ossError||''
+    this.status.categoryCount=d.data.categoryCount||0
+    this.status.setupComplete=!!d.data.setupComplete
+  },
+
+  async saveOss(){
+    this.ossMsg=''
+    this.ossOk=''
+    this.savingOss=true
+    try{
+      const body={
+        endpoint:this.form.endpoint,
+        bucket:this.form.bucket,
+        accessKeyId:this.form.accessKeyId,
+        accessKeySecret:this.form.accessKeySecret,
+        private:!!this.form.private,
+        signedExpire:Number(this.form.signedExpire)||0,
+        urlPrefix:this.form.urlPrefix,
+        businessToken:this.form.businessToken,
+        clearBusinessToken:!!this.form.clearBusinessToken
+      }
+      const d=await this.request('/api/settings',{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      })
+      if(d.code===0){
+        this.applyView(d.data)
+        this.ossOk='已保存，OSS 试连通过'
+      }else{
+        this.ossMsg=d.msg||'保存失败'
+      }
+    }catch(e){
+      if(!e.unauthorized) this.ossMsg='请求失败：'+e.message
+    }
+    this.savingOss=false
+  },
+
+  async loadCategories(){
+    const d=await this.request('/api/categories')
+    if(d.code===0) this.categories=d.data||[]
+    else this.catMsg=d.msg||'读取分类失败'
+  },
+
+  resetCategory(){
+    this.catForm={id:0,name:'',ossPrefix:'',sort:0}
+    this.catMsg=''
+  },
+
+  editCategory(c){
+    this.catForm={id:c.id,name:c.name,ossPrefix:c.ossPrefix,sort:c.sort}
+    this.catMsg=''
+  },
+
+  async saveCategory(){
+    this.catMsg=''
+    const name=(this.catForm.name||'').trim()
+    const ossPrefix=(this.catForm.ossPrefix||'').trim()
+    if(!name){this.catMsg='请填写分类名称';return}
+    if(!ossPrefix){this.catMsg='请填写 OSS 前缀';return}
+    const sort=Number.isFinite(Number(this.catForm.sort))?Number(this.catForm.sort):0
+    const editing=this.catForm.id
+    this.catSaving=true
+    try{
+      const d=await this.request(editing?'/api/categories/'+editing:'/api/categories',{
+        method:editing?'PUT':'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name,ossPrefix,sort})
+      })
+      if(d.code===0){
+        this.resetCategory()
+        await this.loadCategories()
+        await this.refreshStatus()
+      }else{
+        this.catMsg=d.msg||'保存失败'
+      }
+    }catch(e){
+      if(!e.unauthorized) this.catMsg='请求失败：'+e.message
+    }
+    this.catSaving=false
+  },
+
+  async removeCategory(c){
+    if(!confirm('确定删除分类「'+c.name+'」？\n分类下仍有素材时将无法删除。')) return
+    this.catMsg=''
+    try{
+      const d=await this.request('/api/categories/'+c.id,{method:'DELETE'})
+      if(d.code===0){
+        if(this.catForm.id===c.id) this.resetCategory()
+        await this.loadCategories()
+        await this.refreshStatus()
+      }else{
+        this.catMsg=d.msg||'删除失败'
+      }
+    }catch(e){
+      if(!e.unauthorized) this.catMsg='请求失败：'+e.message
+    }
+  },
+
+  async loadTags(){
+    const d=await this.request('/api/tags')
+    if(d.code===0) this.tags=d.data||[]
+    else this.tagMsg=d.msg||'读取标签失败'
+  },
+
+  resetTag(){
+    this.tagForm={id:0,name:''}
+    this.tagMsg=''
+  },
+
+  editTag(t){
+    this.tagForm={id:t.id,name:t.name}
+    this.tagMsg=''
+  },
+
+  async saveTag(){
+    this.tagMsg=''
+    const name=(this.tagForm.name||'').trim()
+    if(!name){this.tagMsg='请填写标签名称';return}
+    const editing=this.tagForm.id
+    this.tagSaving=true
+    try{
+      const d=await this.request(editing?'/api/tags/'+editing:'/api/tags',{
+        method:editing?'PUT':'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name})
+      })
+      if(d.code===0){
+        this.resetTag()
+        await this.loadTags()
+      }else{
+        this.tagMsg=d.msg||'保存失败'
+      }
+    }catch(e){
+      if(!e.unauthorized) this.tagMsg='请求失败：'+e.message
+    }
+    this.tagSaving=false
+  },
+
+  async removeTag(t){
+    if(!confirm('确定删除标签「'+t.name+'」？\n已绑定该标签的素材会解除关联。')) return
+    this.tagMsg=''
+    try{
+      const d=await this.request('/api/tags/'+t.id,{method:'DELETE'})
+      if(d.code===0){
+        if(this.tagForm.id===t.id) this.resetTag()
+        await this.loadTags()
+      }else{
+        this.tagMsg=d.msg||'删除失败'
+      }
+    }catch(e){
+      if(!e.unauthorized) this.tagMsg='请求失败：'+e.message
+    }
+  },
+
+  async logout(){await fetch('/api/logout',{method:'POST'});location.href='/login'}
+}}
+</script>
+</body>
+</html>

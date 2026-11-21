@@ -1,0 +1,21 @@
+server:
+  port: 8080
+  username: admin
+  password: "123456"
+  secret: "please-change-this-session-secret-32chars"
+  session_max_age: 86400
+  business_token: ""          # 业务查询接口token，留空则不校验（建议线上填写）
+
+database:
+  path: "assethub.db"
+
+oss:
+  endpoint: "oss-cn-beijing.aliyuncs.com"   # 不带 https://
+  bucket: "blackcat-assethub"
+  access_key_id: "LTAI5txxxxxxxx"
+  access_key_secret: "xxxxxxxxxxxxxxxx"
+  private: true                 # true=Bucket私有读，返回签名URL；false=公共读，直接拼URL
+  signed_expire: 3600           # 私有Bucket签名有效期（秒）
+  url_prefix: "https://your-bucket-name.oss-cn-beijing.aliyuncs.com/"
+
+# 对象路径前缀已改由「设置 → 分类」中的 ossPrefix 管理；不再使用 path_rule。
