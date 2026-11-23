@@ -20,32 +20,38 @@ type CategoryCounter interface {
 
 // SettingsView 是 GET/PUT /api/settings 的响应（密钥不明文）。
 type SettingsView struct {
-	Endpoint            string `json:"endpoint"`
-	Bucket              string `json:"bucket"`
-	Private             bool   `json:"private"`
-	SignedExpire        int    `json:"signedExpire"`
-	URLPrefix           string `json:"urlPrefix"`
-	AccessKeyIDMasked   string `json:"accessKeyIdMasked"`
-	AccessKeySecretSet  bool   `json:"accessKeySecretSet"`
-	BusinessTokenSet    bool   `json:"businessTokenSet"`
-	BusinessTokenMasked string `json:"businessTokenMasked"`
-	OssReady            bool   `json:"ossReady"`
-	OssError            string `json:"ossError"`
-	CategoryCount       int    `json:"categoryCount"`
-	SetupComplete       bool   `json:"setupComplete"`
+	Endpoint             string `json:"endpoint"`
+	Bucket               string `json:"bucket"`
+	Private              bool   `json:"private"`
+	SignedExpire         int    `json:"signedExpire"`
+	URLPrefix            string `json:"urlPrefix"`
+	AccessKeyIDMasked    string `json:"accessKeyIdMasked"`
+	AccessKeySecretSet   bool   `json:"accessKeySecretSet"`
+	BusinessTokenSet     bool   `json:"businessTokenSet"`
+	BusinessTokenMasked  string `json:"businessTokenMasked"`
+	OssReady             bool   `json:"ossReady"`
+	OssError             string `json:"ossError"`
+	CategoryCount        int    `json:"categoryCount"`
+	SetupComplete        bool   `json:"setupComplete"`
+	OwnOssLinkMode       string `json:"ownOssLinkMode"`
+	ReuploadDeleteSource bool   `json:"reuploadDeleteSource"`
+	DeleteRemoveOss      bool   `json:"deleteRemoveOss"`
 }
 
 // SettingsUpdateReq 是 PUT /api/settings 的请求体。
 type SettingsUpdateReq struct {
-	Endpoint           string `json:"endpoint"`
-	Bucket             string `json:"bucket"`
-	AccessKeyID        string `json:"accessKeyId"`
-	AccessKeySecret    string `json:"accessKeySecret"`
-	URLPrefix          string `json:"urlPrefix"`
-	BusinessToken      string `json:"businessToken"`
-	Private            bool   `json:"private"`
-	SignedExpire       int    `json:"signedExpire"`
-	ClearBusinessToken bool   `json:"clearBusinessToken"`
+	Endpoint             string `json:"endpoint"`
+	Bucket               string `json:"bucket"`
+	AccessKeyID          string `json:"accessKeyId"`
+	AccessKeySecret      string `json:"accessKeySecret"`
+	URLPrefix            string `json:"urlPrefix"`
+	BusinessToken        string `json:"businessToken"`
+	Private              bool   `json:"private"`
+	SignedExpire         int    `json:"signedExpire"`
+	ClearBusinessToken   bool   `json:"clearBusinessToken"`
+	OwnOssLinkMode       string `json:"ownOssLinkMode"`
+	ReuploadDeleteSource bool   `json:"reuploadDeleteSource"`
+	DeleteRemoveOss      bool   `json:"deleteRemoveOss"`
 }
 
 // SetupStatus 是 GET /api/setup/status 的响应。
@@ -167,6 +173,26 @@ func (s *SettingsService) BusinessToken() string {
 	return s.row.BusinessToken
 }
 
+// CommonPolicy 返回本账号 OSS 链接策略。无设置行时 register、不删源、删除时移除 OSS。
+func (s *SettingsService) CommonPolicy() (mode string, reuploadDeleteSource, deleteRemoveOss bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return policyFromRow(s.row, s.hasRow)
+}
+
+// OSSEndpointBucket 返回当前设置中的 Endpoint 与 Bucket（用于本账号 URL 识别）。
+func (s *SettingsService) OSSEndpointBucket() (endpoint, bucket string) {
+	if s == nil {
+		return "", ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return strings.TrimSpace(s.row.Endpoint), strings.TrimSpace(s.row.Bucket)
+}
+
+// ossConnectionTester 供 Update 试连；单测可替换以避免真实 OSS。
+var ossConnectionTester = TestOSSConnection
+
 // View 返回脱敏后的设置与就绪状态。
 func (s *SettingsService) View() SettingsView {
 	s.mu.RLock()
@@ -204,9 +230,13 @@ func (s *SettingsService) Update(req SettingsUpdateReq) (SettingsView, error) {
 	if err := validateSettings(merged); err != nil {
 		return SettingsView{}, err
 	}
+	normalizePolicyFields(&merged)
+	ossConnUnchanged := ossConnectionFieldsEqual(old, merged)
 	ossCfg := rowToOSS(merged)
-	if err := TestOSSConnection(ossCfg); err != nil {
-		return SettingsView{}, err
+	if !ossConnUnchanged {
+		if err := ossConnectionTester(ossCfg); err != nil {
+			return SettingsView{}, err
+		}
 	}
 	merged.UpdateTime = time.Now().Format(repoTimeLayout)
 	if s.repo != nil {
@@ -216,13 +246,15 @@ func (s *SettingsService) Update(req SettingsUpdateReq) (SettingsView, error) {
 	}
 	s.row = merged
 	s.hasRow = true
-	s.installOSS(merged)
-	if s.oss == nil || !s.oss.Ready() {
-		msg := "OSS 未就绪"
-		if s.oss != nil && s.oss.LastError() != "" {
-			msg = s.oss.LastError()
+	if !ossConnUnchanged {
+		s.installOSS(merged)
+		if s.oss == nil || !s.oss.Ready() {
+			msg := "OSS 未就绪"
+			if s.oss != nil && s.oss.LastError() != "" {
+				msg = s.oss.LastError()
+			}
+			return s.viewLocked(), errors.New(msg)
 		}
-		return s.viewLocked(), errors.New(msg)
 	}
 	return s.viewLocked(), nil
 }
@@ -248,6 +280,9 @@ func mergeSettings(old repo.SettingsRow, req SettingsUpdateReq) repo.SettingsRow
 	} else if tok := strings.TrimSpace(req.BusinessToken); tok != "" {
 		merged.BusinessToken = tok
 	}
+	merged.OwnOssLinkMode = strings.TrimSpace(req.OwnOssLinkMode)
+	merged.ReuploadDeleteSource = req.ReuploadDeleteSource
+	merged.DeleteRemoveOss = req.DeleteRemoveOss
 	return merged
 }
 
@@ -258,7 +293,41 @@ func validateSettings(row repo.SettingsRow) error {
 	if row.SignedExpire <= 0 {
 		return errors.New("signedExpire 必须大于 0")
 	}
+	mode := strings.TrimSpace(row.OwnOssLinkMode)
+	if mode == "" {
+		mode = "register"
+	}
+	if mode != "register" && mode != "reupload" {
+		return errors.New("本账号链接处理方式无效")
+	}
 	return nil
+}
+
+func policyFromRow(row repo.SettingsRow, hasRow bool) (mode string, reuploadDeleteSource, deleteRemoveOss bool) {
+	if !hasRow {
+		return "register", false, true
+	}
+	mode = strings.TrimSpace(row.OwnOssLinkMode)
+	if mode == "" {
+		mode = "register"
+	}
+	return mode, row.ReuploadDeleteSource, row.DeleteRemoveOss
+}
+
+func normalizePolicyFields(row *repo.SettingsRow) {
+	if strings.TrimSpace(row.OwnOssLinkMode) == "" {
+		row.OwnOssLinkMode = "register"
+	}
+}
+
+func ossConnectionFieldsEqual(a, b repo.SettingsRow) bool {
+	return a.Endpoint == b.Endpoint &&
+		a.Bucket == b.Bucket &&
+		a.AccessKeyID == b.AccessKeyID &&
+		a.AccessKeySecret == b.AccessKeySecret &&
+		a.URLPrefix == b.URLPrefix &&
+		a.Private == b.Private &&
+		a.SignedExpire == b.SignedExpire
 }
 
 // maskAK 长度大于 8 时保留前 4 与后 4，否则为 ****。空串保持空。
@@ -286,19 +355,23 @@ func (s *SettingsService) viewLocked() SettingsView {
 	if !ready && s.oss != nil {
 		ossErr = s.oss.LastError()
 	}
+	mode, reuploadDel, deleteRemoveOss := policyFromRow(s.row, s.hasRow)
 	v := SettingsView{
-		Endpoint:           s.row.Endpoint,
-		Bucket:             s.row.Bucket,
-		Private:            s.row.Private,
-		SignedExpire:       s.row.SignedExpire,
-		URLPrefix:          s.row.URLPrefix,
-		AccessKeyIDMasked:  maskAK(s.row.AccessKeyID),
-		AccessKeySecretSet: s.row.AccessKeySecret != "",
-		BusinessTokenSet:   s.row.BusinessToken != "",
-		OssReady:           ready,
-		OssError:           ossErr,
-		CategoryCount:      n,
-		SetupComplete:      ready && n >= 1,
+		Endpoint:             s.row.Endpoint,
+		Bucket:               s.row.Bucket,
+		Private:              s.row.Private,
+		SignedExpire:         s.row.SignedExpire,
+		URLPrefix:            s.row.URLPrefix,
+		AccessKeyIDMasked:    maskAK(s.row.AccessKeyID),
+		AccessKeySecretSet:   s.row.AccessKeySecret != "",
+		BusinessTokenSet:     s.row.BusinessToken != "",
+		OssReady:             ready,
+		OssError:             ossErr,
+		CategoryCount:        n,
+		SetupComplete:        ready && n >= 1,
+		OwnOssLinkMode:       mode,
+		ReuploadDeleteSource: reuploadDel,
+		DeleteRemoveOss:      deleteRemoveOss,
 	}
 	if v.BusinessTokenSet {
 		v.BusinessTokenMasked = "****"

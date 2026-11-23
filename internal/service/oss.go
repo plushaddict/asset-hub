@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
@@ -166,6 +167,33 @@ func (s *OSSService) DeleteObjects(keys []string) error {
 		}
 	}
 	return firstErr
+}
+
+// HeadObjectMeta 读取对象元数据（不下载内容），返回 Content-Length。
+func (s *OSSService) HeadObjectMeta(key string) (size int64, err error) {
+	if key == "" {
+		return 0, errors.New("object key 为空")
+	}
+	if err := s.guard(); err != nil {
+		return 0, err
+	}
+	meta, err := s.bucket.GetObjectMeta(key)
+	if err != nil {
+		var se oss.ServiceError
+		if errors.As(err, &se) && (se.Code == "NoSuchKey" || se.StatusCode == 404) {
+			return 0, fmt.Errorf("%w: %s", ErrOSSObjectNotFound, se.Message)
+		}
+		return 0, err
+	}
+	cl := strings.TrimSpace(meta.Get("Content-Length"))
+	if cl == "" {
+		return 0, nil
+	}
+	size, parseErr := strconv.ParseInt(cl, 10, 64)
+	if parseErr != nil {
+		return 0, fmt.Errorf("无效的 Content-Length: %q", cl)
+	}
+	return size, nil
 }
 
 // URL 生成访问链接：公共读直接拼前缀；私有 Bucket 生成带时效签名 URL。

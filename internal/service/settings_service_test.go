@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"assethub/internal/config"
 	"assethub/internal/repo"
 )
 
@@ -125,6 +126,9 @@ func TestOSSNotReadyGuards(t *testing.T) {
 	if _, err := s.URL(""); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.HeadObjectMeta("k"); err == nil || err.Error() != ossNotReadyMsg {
+		t.Fatal(err)
+	}
 }
 
 type stubCounter struct {
@@ -185,6 +189,115 @@ func TestFormatOSSErrorInvalidAccessKeyId(t *testing.T) {
 	msg2 := FormatOSSError(errors.New(`oss: service returned error: StatusCode=404, ErrorCode=NoSuchBucket, ErrorMessage="x", RequestId=1`))
 	if !strings.Contains(msg2, "Bucket") {
 		t.Fatalf("msg2=%q", msg2)
+	}
+}
+
+func TestSettingsViewPolicyDefaults(t *testing.T) {
+	db, err := repo.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := repo.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSettingsService(repo.NewSettingsRepo(db), nil)
+	v := s.View()
+	if v.OwnOssLinkMode != "register" || v.ReuploadDeleteSource || !v.DeleteRemoveOss {
+		t.Fatalf("view defaults: %+v", v)
+	}
+	mode, reupload, delOss := s.CommonPolicy()
+	if mode != "register" || reupload || !delOss {
+		t.Fatalf("CommonPolicy: %q %v %v", mode, reupload, delOss)
+	}
+}
+
+func TestValidateInvalidOwnOssLinkMode(t *testing.T) {
+	base := repo.SettingsRow{
+		Endpoint:        "ep",
+		Bucket:          "b",
+		AccessKeyID:     "id",
+		AccessKeySecret: "sec",
+		URLPrefix:       "https://x",
+		SignedExpire:    3600,
+		OwnOssLinkMode:  "nope",
+	}
+	err := validateSettings(base)
+	if err == nil || err.Error() != "本账号链接处理方式无效" {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestUpdatePolicyOnlySkipsOSSConnectionTest(t *testing.T) {
+	db, err := repo.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := repo.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	r := repo.NewSettingsRepo(db)
+	row := repo.SettingsRow{
+		Endpoint:        "oss-cn-hangzhou.aliyuncs.com",
+		Bucket:          "my-bucket",
+		AccessKeyID:     "LTAI1234567890ab",
+		AccessKeySecret: "secretsecretsecret",
+		URLPrefix:       "https://my-bucket.oss-cn-hangzhou.aliyuncs.com",
+		Private:         true,
+		SignedExpire:    3600,
+		OwnOssLinkMode:  "register",
+		DeleteRemoveOss: true,
+	}
+	if err := r.Upsert(row); err != nil {
+		t.Fatal(err)
+	}
+	s := &SettingsService{repo: r, hasRow: true, row: row, oss: &OSSService{errMsg: "离线"}}
+
+	calls := 0
+	oldTester := ossConnectionTester
+	ossConnectionTester = func(cfg config.OSSConfig) error {
+		calls++
+		return errors.New("试连不应被调用")
+	}
+	defer func() { ossConnectionTester = oldTester }()
+
+	v, err := s.Update(SettingsUpdateReq{
+		Endpoint:        row.Endpoint,
+		Bucket:          row.Bucket,
+		URLPrefix:       row.URLPrefix,
+		Private:         row.Private,
+		SignedExpire:    row.SignedExpire,
+		OwnOssLinkMode:  "register",
+		DeleteRemoveOss: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 {
+		t.Fatalf("expected 0 oss test calls, got %d", calls)
+	}
+	if v.DeleteRemoveOss {
+		t.Fatalf("view: %+v", v)
+	}
+	got, err := r.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DeleteRemoveOss {
+		t.Fatalf("repo: %+v", got)
+	}
+}
+
+func TestMergeSettingsPolicyFields(t *testing.T) {
+	old := repo.SettingsRow{OwnOssLinkMode: "register", DeleteRemoveOss: true}
+	merged := mergeSettings(old, SettingsUpdateReq{
+		OwnOssLinkMode:       "  reupload ",
+		ReuploadDeleteSource: true,
+		DeleteRemoveOss:      false,
+	})
+	if merged.OwnOssLinkMode != "reupload" || !merged.ReuploadDeleteSource || merged.DeleteRemoveOss {
+		t.Fatalf("%+v", merged)
 	}
 }
 

@@ -15,9 +15,12 @@ type SettingsRow struct {
 	AccessKeySecret string
 	URLPrefix       string
 	BusinessToken   string
-	Private         bool
-	SignedExpire    int
-	UpdateTime      string
+	Private              bool
+	SignedExpire         int
+	OwnOssLinkMode       string
+	ReuploadDeleteSource bool
+	DeleteRemoveOss      bool
+	UpdateTime           string
 }
 
 // SettingsRepo 读写系统设置单行。
@@ -32,18 +35,22 @@ func NewSettingsRepo(db *sql.DB) *SettingsRepo {
 // Get 读取 id=1。无行时返回 sql.ErrNoRows。
 func (r *SettingsRepo) Get() (*SettingsRow, error) {
 	var row SettingsRow
-	var priv int
+	var priv, reupload, deleteOss int
 	err := r.db.QueryRow(`
 SELECT endpoint, bucket, access_key_id, access_key_secret, private,
-       signed_expire, url_prefix, business_token, update_time
+       signed_expire, url_prefix, business_token, own_oss_link_mode,
+       reupload_delete_source, delete_remove_oss, update_time
 FROM system_settings WHERE id = 1`).Scan(
 		&row.Endpoint, &row.Bucket, &row.AccessKeyID, &row.AccessKeySecret, &priv,
-		&row.SignedExpire, &row.URLPrefix, &row.BusinessToken, &row.UpdateTime,
+		&row.SignedExpire, &row.URLPrefix, &row.BusinessToken, &row.OwnOssLinkMode,
+		&reupload, &deleteOss, &row.UpdateTime,
 	)
 	if err != nil {
 		return nil, err
 	}
 	row.Private = priv != 0
+	row.ReuploadDeleteSource = reupload != 0
+	row.DeleteRemoveOss = deleteOss != 0
 	return &row, nil
 }
 
@@ -52,15 +59,38 @@ func (r *SettingsRepo) Upsert(row SettingsRow) error {
 	if row.UpdateTime == "" {
 		row.UpdateTime = time.Now().Format(settingsTimeLayout)
 	}
+	ownMode := row.OwnOssLinkMode
+	if ownMode == "" {
+		ownMode = "register"
+	}
+	deleteRemoveOss := row.DeleteRemoveOss
+	if row.OwnOssLinkMode == "" {
+		var exists int
+		if err := r.db.QueryRow(`SELECT COUNT(*) FROM system_settings WHERE id = 1`).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			deleteRemoveOss = true
+		}
+	}
 	priv := 0
 	if row.Private {
 		priv = 1
 	}
+	reupload := 0
+	if row.ReuploadDeleteSource {
+		reupload = 1
+	}
+	deleteOss := 0
+	if deleteRemoveOss {
+		deleteOss = 1
+	}
 	_, err := r.db.Exec(`
 INSERT INTO system_settings (
     id, endpoint, bucket, access_key_id, access_key_secret,
-    private, signed_expire, url_prefix, business_token, update_time
-) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    private, signed_expire, url_prefix, business_token,
+    own_oss_link_mode, reupload_delete_source, delete_remove_oss, update_time
+) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     endpoint = excluded.endpoint,
     bucket = excluded.bucket,
@@ -70,9 +100,13 @@ ON CONFLICT(id) DO UPDATE SET
     signed_expire = excluded.signed_expire,
     url_prefix = excluded.url_prefix,
     business_token = excluded.business_token,
+    own_oss_link_mode = excluded.own_oss_link_mode,
+    reupload_delete_source = excluded.reupload_delete_source,
+    delete_remove_oss = excluded.delete_remove_oss,
     update_time = excluded.update_time`,
 		row.Endpoint, row.Bucket, row.AccessKeyID, row.AccessKeySecret,
-		priv, row.SignedExpire, row.URLPrefix, row.BusinessToken, row.UpdateTime,
+		priv, row.SignedExpire, row.URLPrefix, row.BusinessToken,
+		ownMode, reupload, deleteOss, row.UpdateTime,
 	)
 	return err
 }

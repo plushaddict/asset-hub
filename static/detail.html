@@ -46,9 +46,10 @@
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
-            <h1 class="text-xl font-bold text-slate-800" x-text="asset.assetName"></h1>
+            <h1 class="text-xl font-bold text-slate-800" x-text="asset.displayName || asset.assetName"></h1>
             <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" x-text="asset.categoryName || '未分类'"></span>
           </div>
+          <div class="text-[11px] text-slate-400 font-mono mt-1">资源名：<span x-text="asset.assetName"></span></div>
           <div class="flex flex-wrap items-center gap-1 mt-2 text-xs">
             <span class="text-slate-400">标签</span>
             <template x-if="!(asset.tags && asset.tags.length)">
@@ -92,22 +93,23 @@
             <th class="px-3 py-2 text-left w-20">大小</th>
             <th class="px-3 py-2 text-left w-36">说明</th>
             <th class="px-3 py-2 text-left">访问链接</th>
-            <th class="px-3 py-2 text-right w-44">操作</th>
+            <th class="px-3 py-2 text-right w-20">操作</th>
           </tr>
         </thead>
         <tbody>
           <template x-for="f in files" :key="f.id">
             <tr class="border-b last:border-0 hover:bg-slate-50">
               <td class="px-5 py-2">
-                <div class="w-12 h-12 bg-slate-50 rounded flex items-center justify-center overflow-hidden">
-                  <img :src="f.url" class="max-w-full max-h-full object-contain" alt="">
+                <div class="w-12 h-12 rounded flex items-center justify-center overflow-hidden border border-slate-200 relative"
+                     style="background-image:linear-gradient(45deg,#e2e8f0 25%,transparent 25%),linear-gradient(-45deg,#e2e8f0 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e2e8f0 75%),linear-gradient(-45deg,transparent 75%,#e2e8f0 75%);background-size:8px 8px;background-position:0 0,0 4px,4px -4px,-4px 0;background-color:#f8fafc">
+                  <img :src="f.url" class="max-w-full max-h-full object-contain" alt=""
+                       x-show="!f._previewFailed"
+                       @error="f._previewFailed=true">
+                  <span x-show="f._previewFailed" class="text-[9px] text-red-400 leading-tight text-center px-0.5">加载失败</span>
                 </div>
               </td>
               <td class="px-3 py-2">
-                <div class="flex items-center gap-1.5">
-                  <span x-text="f.fileName" class="text-slate-700"></span>
-                  <span x-show="f.isPrimary===1" class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600">主图</span>
-                </div>
+                <span x-text="f.fileName" class="text-slate-700"></span>
               </td>
               <td class="px-3 py-2 text-slate-500 text-xs" x-text="f.width?f.width+'×'+f.height:'—'"></td>
               <td class="px-3 py-2 text-slate-500 text-xs" x-text="fmtSize(f.fileSize)"></td>
@@ -125,8 +127,7 @@
                 </div>
               </td>
               <td class="px-3 py-2 text-right whitespace-nowrap">
-                <button type="button" @click="setPrimary(f)" x-show="f.isPrimary!==1" class="text-[11px] text-amber-600 hover:underline">设为主图</button>
-                <button type="button" @click="removeFile(f)" class="text-[11px] text-red-500 hover:underline ml-2">删除</button>
+                <button type="button" @click="removeFile(f)" class="text-[11px] text-red-500 hover:underline">删除</button>
               </td>
             </tr>
           </template>
@@ -194,8 +195,10 @@
   <div x-cloak x-show="showEdit" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
     <div class="bg-white rounded-xl shadow-xl w-[480px] max-w-full max-h-[90vh] overflow-y-auto p-5" @click.outside="showEdit=false">
       <h3 class="font-bold text-slate-800 mb-4">编辑素材信息</h3>
-      <label class="block text-xs text-slate-500 mb-1">素材名称</label>
-      <input class="w-full mb-3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" x-model="editForm.assetName">
+      <label class="block text-xs text-slate-500 mb-1">显示名</label>
+      <input class="w-full mb-3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" x-model="editForm.displayName">
+      <label class="block text-xs text-slate-500 mb-1">资源名（OSS / 业务查询）</label>
+      <input class="w-full mb-3 px-3 py-2 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400" x-model="editForm.assetName">
       <label class="block text-xs text-slate-500 mb-1">分类 *</label>
       <select class="w-full mb-3 px-3 py-2 border rounded-lg text-sm bg-white" x-model.number="editForm.categoryId" :disabled="categories.length===0">
         <option value="0" disabled>请选择分类</option>
@@ -249,7 +252,7 @@ function app(){return{
   statusLoaded:false,
   showUpload:false, uploadSource:'file', sourceUrl:'', file:null, uploading:false, uploadOssHint:false, uploadRemark:'',
   showEdit:false, tagInput:'',
-  editForm:{assetName:'',categoryId:0,tagIds:[],tagNames:[],remark:'',sort:0},
+  editForm:{displayName:'',assetName:'',categoryId:0,tagIds:[],tagNames:[],remark:'',sort:0},
   msg:'',
 
   fmtSize(n){ if(!n)return '—'; if(n<1024)return n+' B'; if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(2)+' MB' },
@@ -391,17 +394,8 @@ function app(){return{
     setTimeout(()=>el.remove(),1500)
   },
 
-  async setPrimary(f){
-    try{
-      const d=await this.request('/api/asset/'+this.assetId+'/files/'+f.id+'/primary',{method:'PUT'})
-      if(d.code===0) this.loadAsset(); else alert(d.msg||'设置失败')
-    }catch(e){
-      if(!e.unauthorized) alert('请求失败：'+e.message)
-    }
-  },
-
   async removeFile(f){
-    if(!confirm('确定删除文件「'+f.fileName+'」？OSS 上的文件也会一并删除。')) return
+    if(!confirm('确定删除文件「'+f.fileName+'」？\n是否同步删除 OSS 对象见「设置 → 公共」。')) return
     try{
       const d=await this.request('/api/asset/'+this.assetId+'/files/'+f.id,{method:'DELETE'})
       if(d.code===0) this.loadAsset(); else alert(d.msg||'删除失败')
@@ -436,6 +430,7 @@ function app(){return{
     this.tagInput=''
     const tags=(this.asset&&this.asset.tags)||[]
     this.editForm={
+      displayName:this.asset.displayName||this.asset.assetName,
       assetName:this.asset.assetName,
       categoryId:this.asset.categoryId||0,
       tagIds:tags.map(t=>t.id),
@@ -470,10 +465,12 @@ function app(){return{
   async submitEdit(){
     this.msg=''
     if((this.tagInput||'').trim()) this.addEditTagName()
-    if(!(this.editForm.assetName||'').trim()){this.msg='请填写素材名称';return}
+    if(!(this.editForm.displayName||'').trim()){this.msg='请填写显示名';return}
+    if(!(this.editForm.assetName||'').trim()){this.msg='请填写资源名';return}
     if(!this.editForm.categoryId){this.msg='请选择分类';return}
     // 始终带上 tagIds / tagNames，按当前选择全量替换；空数组表示清空。
     const body={
+      displayName:this.editForm.displayName.trim(),
       assetName:this.editForm.assetName.trim(),
       categoryId:Number(this.editForm.categoryId),
       remark:this.editForm.remark||'',
@@ -499,7 +496,8 @@ function app(){return{
   },
 
   async removeAsset(){
-    if(!confirm('确定删除素材「'+this.asset.assetName+'」？\n所有格式文件将从 OSS 删除，不可恢复。')) return
+    const delLabel=this.asset.displayName||this.asset.assetName
+    if(!confirm('确定删除素材「'+delLabel+'」？\n是否同步删除 OSS 对象见「设置 → 公共」。')) return
     try{
       const d=await this.request('/api/asset/'+this.assetId,{method:'DELETE'})
       if(d.code===0) location.href='/'

@@ -10,6 +10,7 @@ import (
 	_ "image/png"
 	"io"
 	"mime/multipart"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -22,9 +23,21 @@ import (
 )
 
 const (
-	MaxUploadSize      = 20 << 20 // 20MB
-	MaxFileRemarkRunes = 200
+	MaxUploadSize       = 20 << 20 // 20MB
+	MaxFileRemarkRunes  = 200
+	MaxDisplayNameRunes = 64
 )
+
+func normalizeDisplayName(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", errors.New("请填写显示名")
+	}
+	if utf8.RuneCountInString(s) > MaxDisplayNameRunes {
+		return "", errors.New("显示名长度 1–64")
+	}
+	return s, nil
+}
 
 func normalizeFileRemark(s string) (string, error) {
 	s = strings.TrimSpace(s)
@@ -51,12 +64,24 @@ var (
 	nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 )
 
+// objectStore 是素材服务用到的对象存储操作；测试可注入假实现。
+type objectStore interface {
+	Ready() bool
+	HeadObjectMeta(key string) (size int64, err error)
+	PutObject(key string, r io.ReadSeeker, size int64, contentType string) error
+	DeleteObject(key string) error
+	DeleteObjects(keys []string) error
+	GenObjectKey(prefix, assetName, suffix string) string
+	URL(key string) (string, error)
+}
+
 type AssetService struct {
 	assetRepo    *repo.AssetRepo
 	fileRepo     *repo.AssetFileRepo
 	categoryRepo *repo.CategoryRepo
 	tagRepo      *repo.TagRepo
 	settings     *SettingsService
+	store        objectStore
 }
 
 func NewAssetService(ar *repo.AssetRepo, fr *repo.AssetFileRepo, catRepo *repo.CategoryRepo, tagRepo *repo.TagRepo, settings *SettingsService) *AssetService {
@@ -69,14 +94,21 @@ func NewAssetService(ar *repo.AssetRepo, fr *repo.AssetFileRepo, catRepo *repo.C
 	}
 }
 
-func (s *AssetService) oss() *OSSService {
+func (s *AssetService) oss() objectStore {
+	if s != nil && s.store != nil {
+		return s.store
+	}
 	if s == nil || s.settings == nil {
 		return nil
 	}
-	return s.settings.OSS()
+	o := s.settings.OSS()
+	if o == nil {
+		return nil
+	}
+	return o
 }
 
-func (s *AssetService) requireOSS() (*OSSService, error) {
+func (s *AssetService) requireOSS() (objectStore, error) {
 	o := s.oss()
 	if o == nil || !o.Ready() {
 		return nil, errors.New(ossNotReadyMsg)
@@ -86,9 +118,19 @@ func (s *AssetService) requireOSS() (*OSSService, error) {
 
 // ---------- 素材 ----------
 
-func (s *AssetService) CreateAsset(name string, categoryID int64, tagIDs []int64, tagNames []string, remark, createBy string) (*model.Asset, error) {
-	name = strings.TrimSpace(name)
-	if err := s.ensureName(name, 0); err != nil {
+func (s *AssetService) CreateAsset(displayName, assetName string, categoryID int64, tagIDs []int64, tagNames []string, remark, createBy string) (*model.Asset, error) {
+	dn, err := normalizeDisplayName(displayName)
+	if err != nil {
+		return nil, err
+	}
+	base := strings.TrimSpace(assetName)
+	if base == "" {
+		base = SlugFromDisplayName(dn)
+	} else if !nameRe.MatchString(base) {
+		return nil, errors.New("素材名称只能包含字母、数字、下划线、短横线，长度 1-64")
+	}
+	finalName, err := s.allocateUniqueAssetName(base)
+	if err != nil {
 		return nil, err
 	}
 	cat, err := s.categoryRepo.Get(categoryID)
@@ -100,7 +142,8 @@ func (s *AssetService) CreateAsset(name string, categoryID int64, tagIDs []int64
 		return nil, err
 	}
 	a := &model.Asset{
-		AssetName:    name,
+		AssetName:    finalName,
+		DisplayName:  dn,
 		CategoryID:   cat.ID,
 		CategoryName: cat.Name,
 		Remark:       remark,
@@ -133,12 +176,16 @@ func (s *AssetService) GetAssetByName(name string) (*model.Asset, error) {
 }
 
 // UpdateAsset 更新素材。tagsProvided 为 false 时不改标签关联；为 true 时用 tagIDs ∪ upsert(tagNames) 全量替换，空集合即清空。
-func (s *AssetService) UpdateAsset(id int64, name string, categoryID int64, tagsProvided bool, tagIDs []int64, tagNames []string, remark string, sort int) error {
+func (s *AssetService) UpdateAsset(id int64, displayName, assetName string, categoryID int64, tagsProvided bool, tagIDs []int64, tagNames []string, remark string, sort int) error {
 	a, err := s.assetRepo.GetByID(id)
 	if err != nil {
 		return mapNotFound(err, "素材不存在")
 	}
-	name = strings.TrimSpace(name)
+	dn, err := normalizeDisplayName(displayName)
+	if err != nil {
+		return err
+	}
+	name := strings.TrimSpace(assetName)
 	if err = s.ensureName(name, id); err != nil {
 		return err
 	}
@@ -152,6 +199,7 @@ func (s *AssetService) UpdateAsset(id int64, name string, categoryID int64, tags
 			return err
 		}
 	}
+	a.DisplayName = dn
 	a.AssetName = name
 	a.CategoryID = categoryID
 	a.Remark = remark
@@ -248,20 +296,23 @@ func (s *AssetService) DeleteAsset(id int64) error {
 	if _, err := s.assetRepo.GetByID(id); err != nil {
 		return mapNotFound(err, "素材不存在")
 	}
-	keys, err := s.fileRepo.ObjectKeys(id)
-	if err != nil {
-		return err
-	}
-	if len(keys) > 0 {
-		o, err := s.requireOSS()
+	if s.deleteRemoveOssEnabled() {
+		keys, err := s.fileRepo.ObjectKeys(id)
 		if err != nil {
 			return err
 		}
-		if err = o.DeleteObjects(keys); err != nil {
-			return errors.New("OSS 文件删除失败：" + err.Error())
+		keys = nonemptyObjectKeys(keys)
+		if len(keys) > 0 {
+			o, err := s.requireOSS()
+			if err != nil {
+				return err
+			}
+			if err = o.DeleteObjects(keys); err != nil {
+				return errors.New("OSS 文件删除失败：" + err.Error())
+			}
 		}
 	}
-	if err = s.fileRepo.SoftDeleteAll(id); err != nil {
+	if err := s.fileRepo.SoftDeleteAll(id); err != nil {
 		return err
 	}
 	return s.assetRepo.SoftDelete(id)
@@ -312,7 +363,7 @@ func (s *AssetService) UploadFile(assetID int64, header *multipart.FileHeader, r
 	return s.saveAssetFileBytes(a, data, suffix, remark)
 }
 
-// UploadFileFromURL 从远程 http(s) 地址拉取文件后入库。
+// UploadFileFromURL 从远程 http(s) 地址入库：本账号按公共策略直登或重传，外链始终下载重传且不删源。
 func (s *AssetService) UploadFileFromURL(assetID int64, sourceURL, remark string) (*model.AssetFile, error) {
 	remark, err := normalizeFileRemark(remark)
 	if err != nil {
@@ -322,6 +373,28 @@ func (s *AssetService) UploadFileFromURL(assetID int64, sourceURL, remark string
 	if err != nil {
 		return nil, mapNotFound(err, "素材不存在")
 	}
+	endpoint, bucket := "", ""
+	if s.settings != nil {
+		endpoint, bucket = s.settings.OSSEndpointBucket()
+	}
+	oldKey, ok, parseErr := parseOwnOSSObjectURL(sourceURL, endpoint, bucket)
+	if !ok {
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		return s.fetchAndSaveAssetFile(a, sourceURL, remark)
+	}
+	mode, reuploadDeleteSource := "register", false
+	if s.settings != nil {
+		mode, reuploadDeleteSource, _ = s.settings.CommonPolicy()
+	}
+	if mode == "reupload" {
+		return s.reuploadOwnOSSObject(a, sourceURL, remark, oldKey, reuploadDeleteSource)
+	}
+	return s.registerOwnOSSObject(a, oldKey, remark)
+}
+
+func (s *AssetService) fetchAndSaveAssetFile(a *model.Asset, sourceURL, remark string) (*model.AssetFile, error) {
 	data, finalURL, ct, err := fetchRemoteFile(sourceURL)
 	if err != nil {
 		return nil, err
@@ -333,19 +406,98 @@ func (s *AssetService) UploadFileFromURL(assetID int64, sourceURL, remark string
 	return s.saveAssetFileBytes(a, data, suffix, remark)
 }
 
-func (s *AssetService) saveAssetFileBytes(a *model.Asset, data []byte, suffix, remark string) (*model.AssetFile, error) {
-	if !allowedSuffix[suffix] {
-		return nil, errors.New("不支持的格式：" + suffix + "（允许 png/jpg/jpeg/svg/webp/ico/gif）")
-	}
-	if int64(len(data)) > MaxUploadSize {
-		return nil, errors.New("文件超过 20MB 限制")
-	}
-	exist, err := s.fileRepo.ExistSuffix(a.ID, suffix)
+func (s *AssetService) registerOwnOSSObject(a *model.Asset, key, remark string) (*model.AssetFile, error) {
+	o, err := s.requireOSS()
 	if err != nil {
 		return nil, err
 	}
+	size, err := o.HeadObjectMeta(key)
+	if err != nil {
+		if IsOSSObjectNotFound(err) {
+			return nil, errors.New("OSS 对象不存在，无法直接登记")
+		}
+		return nil, err
+	}
+	suffix := suffixFromURLPath("https://x/" + key)
+	if err = s.ensureSuffixAvailable(a.ID, suffix); err != nil {
+		return nil, err
+	}
+	return s.insertAssetFileRecord(a, suffix, remark, key, size, nil, nil)
+}
+
+func (s *AssetService) reuploadOwnOSSObject(a *model.Asset, sourceURL, remark, oldKey string, deleteSource bool) (*model.AssetFile, error) {
+	af, err := s.fetchAndSaveAssetFile(a, sourceURL, remark)
+	if err != nil {
+		return nil, err
+	}
+	if !shouldDeleteReuploadSource(deleteSource, oldKey, af.ObjectKey) {
+		return af, nil
+	}
+	o, ossErr := s.requireOSS()
+	if ossErr != nil {
+		return af, errors.New("重传成功但删除原对象失败：" + ossErr.Error())
+	}
+	if delErr := o.DeleteObject(oldKey); delErr != nil {
+		return af, errors.New("重传成功但删除原对象失败：" + delErr.Error())
+	}
+	return af, nil
+}
+
+func shouldDeleteReuploadSource(deleteSource bool, oldKey, newKey string) bool {
+	return deleteSource && oldKey != "" && newKey != "" && oldKey != newKey
+}
+
+func (s *AssetService) ensureSuffixAvailable(assetID int64, suffix string) error {
+	if !allowedSuffix[suffix] {
+		return errors.New("不支持的格式：" + suffix + "（允许 png/jpg/jpeg/svg/webp/ico/gif）")
+	}
+	exist, err := s.fileRepo.ExistSuffix(assetID, suffix)
+	if err != nil {
+		return err
+	}
 	if exist {
-		return nil, errors.New("该素材已存在 ." + suffix + " 文件，请先删除再上传")
+		return errors.New("该素材已存在 ." + suffix + " 文件，请先删除再上传")
+	}
+	return nil
+}
+
+func assetFileName(assetName, suffix, objectKey string) string {
+	base := path.Base(objectKey)
+	if base == "" || base == "." || base == "/" {
+		return assetName + "." + suffix
+	}
+	return base
+}
+
+func (s *AssetService) insertAssetFileRecord(a *model.Asset, suffix, remark, key string, size int64, w, h *int) (*model.AssetFile, error) {
+	o, err := s.requireOSS()
+	if err != nil {
+		return nil, err
+	}
+	primary := 0
+	if has, _ := s.fileRepo.HasAnyFile(a.ID); !has {
+		primary = 1
+	}
+	af := &model.AssetFile{
+		AssetID: a.ID, FileName: assetFileName(a.AssetName, suffix, key), Suffix: suffix,
+		FileSize: size, Width: w, Height: h, ObjectKey: key,
+		IsPrimary: primary, Remark: remark,
+	}
+	id, err := s.fileRepo.Insert(af)
+	if err != nil {
+		return nil, err
+	}
+	af.ID = id
+	af.URL, _ = o.URL(key)
+	return af, nil
+}
+
+func (s *AssetService) saveAssetFileBytes(a *model.Asset, data []byte, suffix, remark string) (*model.AssetFile, error) {
+	if err := s.ensureSuffixAvailable(a.ID, suffix); err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > MaxUploadSize {
+		return nil, errors.New("文件超过 20MB 限制")
 	}
 	cat, err := s.categoryRepo.Get(a.CategoryID)
 	if err != nil {
@@ -365,22 +517,7 @@ func (s *AssetService) saveAssetFileBytes(a *model.Asset, data []byte, suffix, r
 		wv, hv := cfg.Width, cfg.Height
 		w, h = &wv, &hv
 	}
-	primary := 0
-	if has, _ := s.fileRepo.HasAnyFile(a.ID); !has {
-		primary = 1
-	}
-	af := &model.AssetFile{
-		AssetID: a.ID, FileName: a.AssetName + "." + suffix, Suffix: suffix,
-		FileSize: int64(len(data)), Width: w, Height: h, ObjectKey: key,
-		IsPrimary: primary, Remark: remark,
-	}
-	id, err := s.fileRepo.Insert(af)
-	if err != nil {
-		return nil, err
-	}
-	af.ID = id
-	af.URL, _ = o.URL(key)
-	return af, nil
+	return s.insertAssetFileRecord(a, suffix, remark, key, int64(len(data)), w, h)
 }
 
 func (s *AssetService) UpdateFileRemark(assetID, fileID int64, remark string) (*model.AssetFile, error) {
@@ -418,12 +555,16 @@ func (s *AssetService) DeleteFile(assetID, fileID int64) error {
 	if err != nil || f.AssetID != assetID {
 		return errors.New("文件不存在")
 	}
-	o, err := s.requireOSS()
-	if err != nil {
-		return err
-	}
-	if err = o.DeleteObject(f.ObjectKey); err != nil {
-		return errors.New("OSS 删除失败：" + err.Error())
+	if s.deleteRemoveOssEnabled() {
+		if key := strings.TrimSpace(f.ObjectKey); key != "" {
+			o, err := s.requireOSS()
+			if err != nil {
+				return err
+			}
+			if err = o.DeleteObject(key); err != nil {
+				return errors.New("OSS 删除失败：" + err.Error())
+			}
+		}
 	}
 	if err = s.fileRepo.SoftDelete(fileID); err != nil {
 		return err
@@ -435,4 +576,22 @@ func (s *AssetService) DeleteFile(assetID, fileID int64) error {
 		}
 	}
 	return nil
+}
+
+func (s *AssetService) deleteRemoveOssEnabled() bool {
+	if s == nil || s.settings == nil {
+		return true
+	}
+	_, _, v := s.settings.CommonPolicy()
+	return v
+}
+
+func nonemptyObjectKeys(keys []string) []string {
+	var out []string
+	for _, k := range keys {
+		if k = strings.TrimSpace(k); k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
 }

@@ -46,14 +46,14 @@ func TestCreateAndUpdateAssetTags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err = svc.CreateAsset("logo", 999, nil, nil, "", "admin"); err == nil || err.Error() != "分类不存在" {
+	if _, err = svc.CreateAsset("logo", "logo", 999, nil, nil, "", "admin"); err == nil || err.Error() != "分类不存在" {
 		t.Fatalf("missing category: %v", err)
 	}
-	if _, err = svc.CreateAsset("logo", catID, []int64{42}, nil, "", "admin"); err == nil || err.Error() != "标签不存在" {
+	if _, err = svc.CreateAsset("logo", "logo", catID, []int64{42}, nil, "", "admin"); err == nil || err.Error() != "标签不存在" {
 		t.Fatalf("missing tag: %v", err)
 	}
 
-	a, err := svc.CreateAsset("logo", catID, []int64{redID, redID}, []string{"  蓝  ", "红", "  "}, "note", "admin")
+	a, err := svc.CreateAsset("logo", "logo", catID, []int64{redID, redID}, []string{"  蓝  ", "红", "  "}, "note", "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestCreateAndUpdateAssetTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.UpdateAsset(a.ID, "logo", catID, false, nil, []string{"不该出现"}, "note2", 3); err != nil {
+	if err = svc.UpdateAsset(a.ID, "logo", "logo", catID, false, nil, []string{"不该出现"}, "note2", 3); err != nil {
 		t.Fatal(err)
 	}
 	got, err := tagRepo.ListByAssetID(a.ID)
@@ -97,7 +97,7 @@ func TestCreateAndUpdateAssetTags(t *testing.T) {
 		t.Fatalf("updated asset = %+v", stored)
 	}
 
-	if err = svc.UpdateAsset(a.ID, "logo", catID, true, []int64{}, []string{}, "note2", 3); err != nil {
+	if err = svc.UpdateAsset(a.ID, "logo", "logo", catID, true, []int64{}, []string{}, "note2", 3); err != nil {
 		t.Fatal(err)
 	}
 	cleared, err := tagRepo.ListByAssetID(a.ID)
@@ -119,7 +119,7 @@ func TestUploadFileFromURL_BadURLBeforeOSS(t *testing.T) {
 	catRepo := repo.NewCategoryRepo(db)
 	catID, _ := catRepo.Insert(&model.Category{Name: "图标", OssPrefix: "icons/", Sort: 0})
 	svc := NewAssetService(repo.NewAssetRepo(db), repo.NewAssetFileRepo(db), catRepo, repo.NewTagRepo(db), NewSettingsService(nil, nil))
-	a, err := svc.CreateAsset("logo", catID, nil, nil, "", "admin")
+	a, err := svc.CreateAsset("logo", "logo", catID, nil, nil, "", "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestUploadFileFromURL_HTTP500BeforeOSS(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewAssetService(repo.NewAssetRepo(db), fileRepo, catRepo, repo.NewTagRepo(db), NewSettingsService(nil, nil))
-	a, err := svc.CreateAsset("logo", catID, nil, nil, "", "admin")
+	a, err := svc.CreateAsset("logo", "logo", catID, nil, nil, "", "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,5 +165,122 @@ func TestUploadFileFromURL_HTTP500BeforeOSS(t *testing.T) {
 	}
 	if len(list) != 0 {
 		t.Fatalf("file rows = %d, want 0", len(list))
+	}
+}
+
+func TestCreateAssetDisplayNamePinyinAndConflict(t *testing.T) {
+	db, err := repo.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err = repo.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	catRepo := repo.NewCategoryRepo(db)
+	catID, err := catRepo.Insert(&model.Category{Name: "图标", OssPrefix: "icons/", Sort: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewAssetService(repo.NewAssetRepo(db), repo.NewAssetFileRepo(db), catRepo, repo.NewTagRepo(db), NewSettingsService(nil, nil))
+
+	a1, err := svc.CreateAsset("百度搜索", "", catID, nil, nil, "", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a1.DisplayName != "百度搜索" || !nameRe.MatchString(a1.AssetName) {
+		t.Fatalf("%+v", a1)
+	}
+	a2, err := svc.CreateAsset("百度搜索", "", catID, nil, nil, "", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a2.AssetName == a1.AssetName || !strings.Contains(a2.AssetName, "_") {
+		t.Fatalf("expected suffix: %q vs %q", a1.AssetName, a2.AssetName)
+	}
+}
+
+func TestUpdateAssetDisplayNameDoesNotChangeAssetName(t *testing.T) {
+	db, err := repo.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err = repo.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	catRepo := repo.NewCategoryRepo(db)
+	catID, err := catRepo.Insert(&model.Category{Name: "图标", OssPrefix: "icons/", Sort: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewAssetService(repo.NewAssetRepo(db), repo.NewAssetFileRepo(db), catRepo, repo.NewTagRepo(db), NewSettingsService(nil, nil))
+
+	a, err := svc.CreateAsset("旧名", "old_slug", catID, nil, nil, "", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.UpdateAsset(a.ID, "新显示名", "old_slug", catID, false, nil, nil, "", 0); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.GetAsset(a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DisplayName != "新显示名" || got.AssetName != "old_slug" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestUpdateAssetNameConflictNoSuffix(t *testing.T) {
+	db, err := repo.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err = repo.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	catRepo := repo.NewCategoryRepo(db)
+	catID, err := catRepo.Insert(&model.Category{Name: "图标", OssPrefix: "icons/", Sort: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewAssetService(repo.NewAssetRepo(db), repo.NewAssetFileRepo(db), catRepo, repo.NewTagRepo(db), NewSettingsService(nil, nil))
+
+	a1, err := svc.CreateAsset("A", "name_a", catID, nil, nil, "", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a2, err := svc.CreateAsset("B", "name_b", catID, nil, nil, "", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.UpdateAsset(a2.ID, "B", "name_a", catID, false, nil, nil, "", 0)
+	if err == nil || !strings.Contains(err.Error(), "已存在") {
+		t.Fatalf("err=%v", err)
+	}
+	_ = a1
+}
+
+func TestCreateAssetInvalidHandfilledName(t *testing.T) {
+	db, err := repo.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err = repo.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	catRepo := repo.NewCategoryRepo(db)
+	catID, err := catRepo.Insert(&model.Category{Name: "图标", OssPrefix: "icons/", Sort: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewAssetService(repo.NewAssetRepo(db), repo.NewAssetFileRepo(db), catRepo, repo.NewTagRepo(db), NewSettingsService(nil, nil))
+
+	_, err = svc.CreateAsset("显示", "中文不行", catID, nil, nil, "", "admin")
+	if err == nil {
+		t.Fatal("expected format error")
 	}
 }

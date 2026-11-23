@@ -2,9 +2,9 @@
 
 轻量图片素材管理系统：按分类与标签组织素材，上传到阿里云 OSS，并生成可复制、可管理的公网访问链接，方便在其它应用和文档中直接引用图片。
 
-源码：[github.com/plushaddict/asset-hub](https://github.com/plushaddict/asset-hub) · 镜像：[`plushaddict/assethub`](https://hub.docker.com/r/plushaddict/assethub)
+源码：[github.com/plushaddict/asset-hub](https://github.com/plushaddict/asset-hub) · 镜像：[`plushaddict/assethub`](https://hub.docker.com/r/plushaddict/assethub) · 更新日志：[CHANGELOG.md](./CHANGELOG.md)
 
-按**分类**组织素材（每类自带 OSS 对象前缀），支持**标签**筛选；一个素材可挂多种格式文件（png / svg / webp / ico …）。列表支持按创建/更新时间、名称、排序字段排序；格式文件可本地上传或填远程 URL 由服务端拉取。
+按**分类**组织素材（每类自带 OSS 对象前缀），支持**标签**筛选；一个素材可挂多种格式文件（png / svg / webp / ico …）。列表支持按创建/更新时间、名称、排序字段排序；格式文件可本地上传或填远程 URL（本账号可直登或重传，见公共设置）。
 
 ## 为什么需要 AssetHub
 
@@ -20,7 +20,7 @@
 
 - **素材级管理**：分类（对应 OSS 前缀）+ 标签筛选，按业务语义组织，而不是只盯着对象 Key。
 - **一键可用的公网链接**：上传后直接生成可复制链接，适合贴进其它应用、文档、设计稿。
-- **多格式一体**：同一素材可挂多种后缀，主图与说明可管，引用时按需选格式。
+- **多格式一体**：同一素材可挂多种后缀与说明，引用时按需选格式。
 - **轻量可部署**：单二进制 / Docker，SQLite，内嵌管理页，不依赖复杂前端构建。
 - **运营友好**：设置页配 OSS、试连 Bucket；业务方拿链接即可用，不必碰控制台。
 
@@ -61,6 +61,7 @@ go run .
 3. 浏览器打开 http://127.0.0.1:8080 ，用配置里的账号密码登录（默认见 `config.yaml`）。
 4. 打开 **设置**（`/settings`）：
    - **OSS**：填写并保存连接（保存时会试连 Bucket）；密钥在接口响应中脱敏。
+   - **公共**（可选）：本账号 OSS 链接直登 / 按规则重传，以及删除时是否同步删除 OSS。
    - **分类**：至少新建一个分类并填写 `ossPrefix`（如 `icon/`、`cover/`）。
    - （可选）配置业务 API 的 `business_token`。
 5. 首页未完成配置时会显示**引导条**（缺 OSS → 去 OSS 页；缺分类 → 去分类页）。配置就绪后：新建素材（必选分类，可选标签，**可在同一弹窗顺带上传多种格式**）→ 亦可进详情继续添加/管理格式（格式文件可填「说明」便于区分类型）→ 复制链接或走业务 API。
@@ -155,7 +156,10 @@ Docker 或其它部署可用环境变量覆盖登录相关项（**非空才生�
 {分类.ossPrefix}{assetName}.{suffix}
 ```
 
-示例：分类前缀 `icon/`、素材名 `logo_book` → `icon/logo_book.png`。素材改名不会移动已上传对象（只影响新上传）；需改路径请删文件后重传。
+- **界面主标题**使用 `displayName`（可为中文等任意展示文案）。
+- **OSS 对象路径**与业务查询参数 `?assetName=` 一律使用英文 **`assetName`**（拼音/标识符，唯一）；二者可不同。
+
+示例：分类前缀 `icon/`、标识名 `baidu_search`、显示名「百度搜索」→ 对象 `icon/baidu_search.png`。修改 `assetName` 不会移动已上传对象（只影响新上传）；需改路径请删文件后重传。
 
 ## 接口一览
 
@@ -166,7 +170,7 @@ Docker 或其它部署可用环境变量覆盖登录相关项（**非空才生�
 | GET | `/login` | 登录页 |
 | GET | `/` | 素材列表（分类/标签筛选、配置引导条） |
 | GET | `/asset/:id` | 素材详情（含所有格式文件） |
-| GET | `/settings` | 系统设置（OSS、分类、标签） |
+| GET | `/settings` | 系统设置（OSS、公共、分类、标签） |
 
 ### 管理接口（需登录 Cookie）
 
@@ -174,8 +178,8 @@ Docker 或其它部署可用环境变量覆盖登录相关项（**非空才生�
 |---|---|---|
 | POST | `/api/login` | 登录，body：`{username,password}` |
 | POST | `/api/logout` | 退出 |
-| GET | `/api/settings` | OSS 与业务 token 脱敏视图 + `ossReady` / `categoryCount` / `setupComplete` |
-| PUT | `/api/settings` | 保存 OSS；body 含 `clearBusinessToken` 可清空业务 token；保存前 `GetBucketInfo` 试连 |
+| GET | `/api/settings` | OSS 与业务 token 脱敏视图 + `ossReady` / `categoryCount` / `setupComplete` + 公共策略 `ownOssLinkMode` / `reuploadDeleteSource` / `deleteRemoveOss` |
+| PUT | `/api/settings` | 保存 OSS 与公共策略；body 含 `clearBusinessToken` 可清空业务 token；连接字段未变时跳过试连 |
 | GET | `/api/setup/status` | 引导条状态：`ossReady`, `ossError`, `categoryCount`, `setupComplete` |
 | GET | `/api/categories` | 分类列表 |
 | POST | `/api/categories` | 新建 `{name, ossPrefix, sort}` |
@@ -185,15 +189,15 @@ Docker 或其它部署可用环境变量覆盖登录相关项（**非空才生�
 | POST | `/api/tags` | 新建 `{name}` |
 | PUT | `/api/tags/:id` | 更新标签 |
 | DELETE | `/api/tags/:id` | 删除标签 |
-| POST | `/api/asset` | 新建 `{assetName, categoryId, tagIds?, tagNames?, remark}` |
-| GET | `/api/asset/list` | 分页：`keyword`, `categoryId`, `tagIds`（逗号分隔，**AND**）, `page`, `size`, `sortBy`（`createTime`/`updateTime`/`assetName`/`sort`，默认 `createTime`）, `sortOrder`（`asc`/`desc`，默认 `desc`） |
+| POST | `/api/asset` | 新建 `{displayName, assetName?, categoryId, tagIds?, tagNames?, remark}`（`assetName` 可省略，由 `displayName` 推导） |
+| GET | `/api/asset/list` | 分页：`keyword`（匹配 `assetName`、`displayName`、备注等）, `categoryId`, `tagIds`（逗号分隔，**AND**）, `page`, `size`, `sortBy`（`createTime`/`updateTime`/`assetName`/`sort`，默认 `createTime`）, `sortOrder`（`asc`/`desc`，默认 `desc`） |
 | GET | `/api/asset/:id` | 素材详情 + `files` + `tags` |
-| PUT | `/api/asset/:id` | 修改 `{assetName, categoryId, remark, sort}`；若带 `tagIds` 或 `tagNames` 则**全量替换**标签（空数组即清空） |
-| DELETE | `/api/asset/:id` | 删除素材（删 OSS 对象 + 逻辑删库） |
-| POST | `/api/asset/:id/files` | 上传，`multipart/form-data`：`file` 与 `sourceUrl` 互斥（二选一）；可选 `remark`（说明，≤200 字）。`sourceUrl` 为远程 http(s) 地址，由服务端拉取后入库 |
+| PUT | `/api/asset/:id` | 修改 `{displayName, assetName, categoryId, remark, sort}`；若带 `tagIds` 或 `tagNames` 则**全量替换**标签（空数组即清空） |
+| DELETE | `/api/asset/:id` | 删除素材（逻辑删库；是否同时删 OSS 由公共设置 `deleteRemoveOss` 控制） |
+| POST | `/api/asset/:id/files` | 上传，`multipart/form-data`：`file` 与 `sourceUrl` 互斥（二选一）；可选 `remark`（说明，≤200 字）。`sourceUrl` 为远程 http(s) 地址；本账号 OSS 链接可直登或按规则重传（见设置 → 公共），外链始终下载后入库 |
 | PUT | `/api/asset/:id/files/:fid` | 更新 `{ remark }`（说明，≤200 字） |
-| PUT | `/api/asset/:id/files/:fid/primary` | 设为主图 |
-| DELETE | `/api/asset/:id/files/:fid` | 删除单个格式文件 |
+| PUT | `/api/asset/:id/files/:fid/primary` | （保留接口，管理端已不再使用「主图」概念） |
+| DELETE | `/api/asset/:id/files/:fid` | 删除单个格式文件（是否同时删 OSS 由 `deleteRemoveOss` 控制） |
 
 ### 业务查询接口（给 ComiGo 等业务）
 
@@ -212,6 +216,7 @@ Header: X-Asset-Token: <business_token>   # 或 query token=；未配置 busines
   "data": {
     "assetId": 12,
     "assetName": "book_cover_001",
+    "displayName": "百度搜索",
     "categoryId": 3,
     "categoryName": "书籍封面",
     "tags": [
@@ -232,8 +237,8 @@ Header: X-Asset-Token: <business_token>   # 或 query token=；未配置 busines
 
 - **一个素材 = 一条 asset + N 条 asset_file**；同素材下后缀唯一，重复上传同后缀会被拦截。
 - **分类**决定 OSS 前缀；**标签**多对多，列表筛选用 `tagIds` 做 AND。
-- 首个上传文件自动为主图；删主图后提升剩余第一个。
-- 删除素材时先删 OSS 再逻辑删库；`del_flag` 软删可追溯。
+- 列表页不展示预览图；详情页按各格式文件的访问链接预览（浅色图使用棋盘底便于辨认）。
+- 删除素材/文件时是否同时删 OSS 由公共设置 `deleteRemoveOss` 控制（默认同时删除）；`del_flag` 软删可追溯。
 - 私有 Bucket 不落库长期 URL，读取时实时签名。
 - OSS 未就绪时进程仍启动；上传/保存设置会提示先配置 OSS。
 
@@ -252,4 +257,6 @@ Header: X-Asset-Token: <business_token>   # 或 query token=；未配置 busines
 }
 ```
 
-在**设置页保存 OSS** 时还会调用 `GetBucketInfo` 试连（当前 SDK 无 HeadBucket）。若保存总是失败而对象上传正常，请为 RAM 用户增加 **`oss:GetBucketInfo`**（可对 `acs:oss:*:*:your-bucket` 或账号下 bucket 列表授权）。
+直登本账号已有对象时会 Head 校验对象是否存在。`oss:GetObject` 通常已覆盖 Head；若策略收紧，可再显式授予 **`oss:GetObjectMeta`**（或文档中的 HeadObject 等价权限）。
+
+在**设置页保存 OSS** 时还会调用 `GetBucketInfo` 试连（当前 SDK 无 HeadBucket；连接字段未变时跳过试连）。若保存总是失败而对象上传正常，请为 RAM 用户增加 **`oss:GetBucketInfo`**（可对 `acs:oss:*:*:your-bucket` 或账号下 bucket 列表授权）。

@@ -304,11 +304,12 @@ func (h *Handler) DeleteTag(c *gin.Context) {
 
 func (h *Handler) CreateAsset(c *gin.Context) {
 	var body struct {
-		AssetName  string   `json:"assetName"`
-		CategoryID int64    `json:"categoryId"`
-		TagIDs     []int64  `json:"tagIds"`
-		TagNames   []string `json:"tagNames"`
-		Remark     string   `json:"remark"`
+		DisplayName string   `json:"displayName"`
+		AssetName   string   `json:"assetName"`
+		CategoryID  int64    `json:"categoryId"`
+		TagIDs      []int64  `json:"tagIds"`
+		TagNames    []string `json:"tagNames"`
+		Remark      string   `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		fail(c, "参数错误")
@@ -316,7 +317,7 @@ func (h *Handler) CreateAsset(c *gin.Context) {
 	}
 	sess := sessions.Default(c)
 	createBy, _ := sess.Get("username").(string)
-	a, err := h.assetSvc.CreateAsset(body.AssetName, body.CategoryID, body.TagIDs, body.TagNames, body.Remark, createBy)
+	a, err := h.assetSvc.CreateAsset(body.DisplayName, body.AssetName, body.CategoryID, body.TagIDs, body.TagNames, body.Remark, createBy)
 	if err != nil {
 		fail(c, err.Error())
 		return
@@ -375,12 +376,13 @@ func (h *Handler) UpdateAsset(c *gin.Context) {
 		return
 	}
 	var body struct {
-		AssetName  string   `json:"assetName"`
-		CategoryID int64    `json:"categoryId"`
-		TagIDs     []int64  `json:"tagIds"`
-		TagNames   []string `json:"tagNames"`
-		Remark     string   `json:"remark"`
-		Sort       int      `json:"sort"`
+		DisplayName string   `json:"displayName"`
+		AssetName   string   `json:"assetName"`
+		CategoryID  int64    `json:"categoryId"`
+		TagIDs      []int64  `json:"tagIds"`
+		TagNames    []string `json:"tagNames"`
+		Remark      string   `json:"remark"`
+		Sort        int      `json:"sort"`
 	}
 	if err = json.Unmarshal(raw, &body); err != nil {
 		fail(c, "参数错误")
@@ -389,7 +391,7 @@ func (h *Handler) UpdateAsset(c *gin.Context) {
 	_, hasTagIDs := fields["tagIds"]
 	_, hasTagNames := fields["tagNames"]
 	tagsProvided := hasTagIDs || hasTagNames
-	if err = h.assetSvc.UpdateAsset(id, body.AssetName, body.CategoryID, tagsProvided, body.TagIDs, body.TagNames, body.Remark, body.Sort); err != nil {
+	if err = h.assetSvc.UpdateAsset(id, body.DisplayName, body.AssetName, body.CategoryID, tagsProvided, body.TagIDs, body.TagNames, body.Remark, body.Sort); err != nil {
 		fail(c, err.Error())
 		return
 	}
@@ -533,6 +535,7 @@ func (h *Handler) BusinessAsset(c *gin.Context) {
 	ok(c, gin.H{
 		"assetId":      a.ID,
 		"assetName":    a.AssetName,
+		"displayName":  a.DisplayName,
 		"categoryId":   a.CategoryID,
 		"categoryName": a.CategoryName,
 		"tags":         a.Tags,

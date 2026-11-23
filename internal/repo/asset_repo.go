@@ -17,10 +17,14 @@ func NewAssetRepo(db *sql.DB) *AssetRepo {
 
 func (r *AssetRepo) Insert(a *model.Asset) (int64, error) {
 	t := repoNow()
+	displayName := a.DisplayName
+	if displayName == "" && a.AssetName != "" {
+		displayName = a.AssetName
+	}
 	res, err := r.db.Exec(
-		`INSERT INTO asset(asset_name, category_id, remark, sort, create_by, create_time, update_time)
-		 VALUES (?,?,?,?,?,?,?)`,
-		a.AssetName, a.CategoryID, a.Remark, a.Sort, a.CreateBy, t, t)
+		`INSERT INTO asset(asset_name, display_name, category_id, remark, sort, create_by, create_time, update_time)
+		 VALUES (?,?,?,?,?,?,?,?)`,
+		a.AssetName, displayName, a.CategoryID, a.Remark, a.Sort, a.CreateBy, t, t)
 	if err != nil {
 		return 0, err
 	}
@@ -40,11 +44,11 @@ func (r *AssetRepo) GetByName(name string) (*model.Asset, error) {
 func (r *AssetRepo) getOne(where string, arg any) (*model.Asset, error) {
 	var a model.Asset
 	err := r.db.QueryRow(`
-SELECT a.id, a.asset_name, a.category_id, c.name, a.remark, a.sort, a.create_by, a.create_time, a.update_time
+SELECT a.id, a.asset_name, a.display_name, a.category_id, c.name, a.remark, a.sort, a.create_by, a.create_time, a.update_time
 FROM asset a
 JOIN category c ON c.id = a.category_id
 WHERE a.del_flag = 0 AND `+where, arg).Scan(
-		&a.ID, &a.AssetName, &a.CategoryID, &a.CategoryName, &a.Remark, &a.Sort,
+		&a.ID, &a.AssetName, &a.DisplayName, &a.CategoryID, &a.CategoryName, &a.Remark, &a.Sort,
 		&a.CreateBy, &a.CreateTime, &a.UpdateTime)
 	if err != nil {
 		return nil, err
@@ -57,9 +61,9 @@ WHERE a.del_flag = 0 AND `+where, arg).Scan(
 
 func (r *AssetRepo) Update(a *model.Asset) error {
 	_, err := r.db.Exec(
-		`UPDATE asset SET asset_name = ?, category_id = ?, remark = ?, sort = ?, update_time = ?
+		`UPDATE asset SET asset_name = ?, display_name = ?, category_id = ?, remark = ?, sort = ?, update_time = ?
 		 WHERE id = ? AND del_flag = 0`,
-		a.AssetName, a.CategoryID, a.Remark, a.Sort, repoNow(), a.ID)
+		a.AssetName, a.DisplayName, a.CategoryID, a.Remark, a.Sort, repoNow(), a.ID)
 	return err
 }
 
@@ -88,15 +92,15 @@ func NormalizeSort(sortBy, sortOrder string) (col, dir string) {
 	return col, dir
 }
 
-// PageList 按关键字、分类、标签 AND 分页。keyword 只匹配名称和备注。
+// PageList 按关键字、分类、标签 AND 分页。keyword 匹配展示名、资源名与备注。
 // 每个 tagID 追加一条 EXISTS。结果带 CategoryName，并填上 Tags（无标签为空切片）。
 func (r *AssetRepo) PageList(keyword string, categoryID int64, tagIDs []int64, page, size int, sortBy, sortOrder string) ([]*model.Asset, int, error) {
 	where := "a.del_flag = 0"
 	args := make([]any, 0, 4+len(tagIDs))
 	if keyword != "" {
-		where += " AND (a.asset_name LIKE ? OR a.remark LIKE ?)"
+		where += " AND (a.display_name LIKE ? OR a.asset_name LIKE ? OR a.remark LIKE ?)"
 		kw := "%" + keyword + "%"
-		args = append(args, kw, kw)
+		args = append(args, kw, kw, kw)
 	}
 	if categoryID > 0 {
 		where += " AND a.category_id = ?"
@@ -115,7 +119,7 @@ func (r *AssetRepo) PageList(keyword string, categoryID int64, tagIDs []int64, p
 	}
 
 	col, dir := NormalizeSort(sortBy, sortOrder)
-	q := `SELECT a.id, a.asset_name, a.category_id, c.name, a.remark, a.sort, a.create_by,
+	q := `SELECT a.id, a.asset_name, a.display_name, a.category_id, c.name, a.remark, a.sort, a.create_by,
 	             a.create_time, a.update_time,
 	             (SELECT COUNT(*) FROM asset_file f WHERE f.asset_id = a.id AND f.del_flag = 0)` +
 		from + ` ORDER BY ` + col + ` ` + dir + `, a.id DESC LIMIT ? OFFSET ?`
@@ -129,7 +133,7 @@ func (r *AssetRepo) PageList(keyword string, categoryID int64, tagIDs []int64, p
 	var list []*model.Asset
 	for rows.Next() {
 		var a model.Asset
-		if err = rows.Scan(&a.ID, &a.AssetName, &a.CategoryID, &a.CategoryName, &a.Remark, &a.Sort,
+		if err = rows.Scan(&a.ID, &a.AssetName, &a.DisplayName, &a.CategoryID, &a.CategoryName, &a.Remark, &a.Sort,
 			&a.CreateBy, &a.CreateTime, &a.UpdateTime, &a.FileCount); err != nil {
 			return nil, 0, err
 		}

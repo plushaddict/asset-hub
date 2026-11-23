@@ -4,6 +4,7 @@ package model
 type Asset struct {
 	ID           int64  `json:"id"`
 	AssetName    string `json:"assetName"`
+	DisplayName  string `json:"displayName"`
 	CategoryID   int64  `json:"categoryId"`
 	CategoryName string `json:"categoryName,omitempty"`
 	Remark       string `json:"remark"`

@@ -14,7 +14,7 @@
   <div class="flex items-center justify-between mb-5">
     <div>
       <h1 class="text-2xl font-bold text-slate-800">系统设置</h1>
-      <p class="text-xs text-slate-400 mt-1">OSS 连接、分类前缀与标签。上传路径由分类前缀决定。</p>
+      <p class="text-xs text-slate-400 mt-1">OSS 连接、公共策略、分类前缀与标签。上传路径由分类前缀决定。</p>
     </div>
     <div class="flex gap-2">
       <a href="/" class="border px-4 py-2 rounded-lg text-sm text-slate-500 hover:bg-white">返回列表</a>
@@ -57,6 +57,8 @@
   <div class="flex gap-1 bg-white rounded-xl shadow-sm p-1 mb-5 w-fit">
     <button type="button" @click="setTab('oss')" class="px-4 py-1.5 rounded-lg text-sm"
             :class="tab==='oss' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'">OSS</button>
+    <button type="button" @click="setTab('public')" class="px-4 py-1.5 rounded-lg text-sm"
+            :class="tab==='public' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'">公共</button>
     <button type="button" @click="setTab('category')" class="px-4 py-1.5 rounded-lg text-sm"
             :class="tab==='category' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-50'">分类</button>
     <button type="button" @click="setTab('tag')" class="px-4 py-1.5 rounded-lg text-sm"
@@ -169,6 +171,80 @@
         <button type="submit" :disabled="savingOss"
                 class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-50"
                 x-text="savingOss ? '保存中…' : '保存 OSS'"></button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 公共 -->
+  <div x-cloak x-show="!loading && tab==='public'" class="bg-white rounded-xl shadow-sm p-5">
+    <h2 class="font-medium text-slate-800 mb-1">公共设置</h2>
+    <p class="text-xs text-slate-400 mb-4">本账号 OSS 链接入库方式，以及删除素材/文件时是否同步删除对象。仅改策略时不会试连 OSS。</p>
+
+    <form @submit.prevent="savePublic()" autocomplete="off">
+      <div class="space-y-5">
+        <div>
+          <div class="text-sm text-slate-700 mb-2">本账号 OSS 链接</div>
+          <div class="flex flex-col sm:flex-row gap-2 sm:gap-4">
+            <label class="flex items-center gap-2 text-sm text-slate-700">
+              <input type="radio" class="border-slate-300" name="ownOssLinkMode" value="register" x-model="form.ownOssLinkMode">
+              直接登记
+            </label>
+            <label class="flex items-center gap-2 text-sm text-slate-700">
+              <input type="radio" class="border-slate-300" name="ownOssLinkMode" value="reupload" x-model="form.ownOssLinkMode">
+              下载后按规则重传
+            </label>
+          </div>
+          <p class="text-xs text-slate-400 mt-2 leading-relaxed">判定依据当前 Endpoint + Bucket（virtual-host / path-style）。自定义 CDN 域名未命中该 Host 时按外链处理：始终下载重传，且不删除源站。</p>
+        </div>
+
+        <div class="pl-4 border-l-2 border-slate-200"
+             :class="form.ownOssLinkMode==='reupload' ? '' : 'opacity-50'">
+          <div class="text-sm text-slate-700 mb-2">重传成功后删除原对象</div>
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 text-sm text-slate-700">
+              <input type="radio" class="border-slate-300" name="reuploadDeleteSource"
+                     :disabled="form.ownOssLinkMode!=='reupload'"
+                     :checked="form.reuploadDeleteSource===true"
+                     @change="form.reuploadDeleteSource=true">
+              是
+            </label>
+            <label class="flex items-center gap-2 text-sm text-slate-700">
+              <input type="radio" class="border-slate-300" name="reuploadDeleteSource"
+                     :disabled="form.ownOssLinkMode!=='reupload'"
+                     :checked="form.reuploadDeleteSource===false"
+                     @change="form.reuploadDeleteSource=false">
+              否
+            </label>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">仅「下载后按规则重传」时可改。新旧对象 Key 相同时不会删原。</p>
+        </div>
+
+        <div>
+          <div class="text-sm text-slate-700 mb-2">删除时处理 OSS</div>
+          <div class="flex flex-col sm:flex-row gap-2 sm:gap-4">
+            <label class="flex items-center gap-2 text-sm text-slate-700">
+              <input type="radio" class="border-slate-300" name="deleteRemoveOss"
+                     :checked="form.deleteRemoveOss===true"
+                     @change="form.deleteRemoveOss=true">
+              同时删除 OSS 对象
+            </label>
+            <label class="flex items-center gap-2 text-sm text-slate-700">
+              <input type="radio" class="border-slate-300" name="deleteRemoveOss"
+                     :checked="form.deleteRemoveOss===false"
+                     @change="form.deleteRemoveOss=false">
+              仅删库保留 OSS
+            </label>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">删除素材或单个格式文件时生效；确认框不再单独询问是否删 OSS。</p>
+        </div>
+      </div>
+
+      <div x-cloak x-show="publicMsg" class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 leading-relaxed whitespace-pre-wrap" x-text="publicMsg"></div>
+      <div x-cloak x-show="publicOk" class="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" x-text="publicOk"></div>
+      <div class="flex justify-end mt-4">
+        <button type="submit" :disabled="savingPublic"
+                class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-50"
+                x-text="savingPublic ? '保存中…' : '保存公共设置'"></button>
       </div>
     </form>
   </div>
@@ -290,10 +366,12 @@ function app(){return{
   status:{ossReady:false,ossError:'',categoryCount:0,setupComplete:false},
   form:{
     endpoint:'',bucket:'',private:true,signedExpire:3600,urlPrefix:'',
-    accessKeyId:'',accessKeySecret:'',businessToken:'',clearBusinessToken:false
+    accessKeyId:'',accessKeySecret:'',businessToken:'',clearBusinessToken:false,
+    ownOssLinkMode:'register',reuploadDeleteSource:false,deleteRemoveOss:true
   },
   hints:{accessKeyIdMasked:'',accessKeySecretSet:false,businessTokenSet:false,businessTokenMasked:''},
   ossMsg:'',ossOk:'',savingOss:false,
+  publicMsg:'',publicOk:'',savingPublic:false,
   categories:[],
   catForm:{id:0,name:'',ossPrefix:'',sort:0},
   catMsg:'',catSaving:false,
@@ -314,7 +392,7 @@ function app(){return{
     let hash=(location.hash||'').replace(/^#/,'')
     if(hash.indexOf('tab=')===0) hash=hash.slice(4)
     const raw=(q||hash||'').toLowerCase()
-    if(raw==='oss'||raw==='category'||raw==='tag') this.tab=raw
+    if(raw==='oss'||raw==='public'||raw==='category'||raw==='tag') this.tab=raw
   },
 
   setTab(t){
@@ -353,6 +431,9 @@ function app(){return{
     this.form.accessKeySecret=''
     this.form.businessToken=''
     this.form.clearBusinessToken=false
+    this.form.ownOssLinkMode=v.ownOssLinkMode||'register'
+    this.form.reuploadDeleteSource=!!v.reuploadDeleteSource
+    this.form.deleteRemoveOss=v.deleteRemoveOss!==false
     this.hints.accessKeyIdMasked=v.accessKeyIdMasked||''
     this.hints.accessKeySecretSet=!!v.accessKeySecretSet
     this.hints.businessTokenSet=!!v.businessTokenSet
@@ -388,26 +469,32 @@ function app(){return{
     this.status.setupComplete=!!d.data.setupComplete
   },
 
+  settingsPayload(){
+    return {
+      endpoint:this.form.endpoint,
+      bucket:this.form.bucket,
+      accessKeyId:this.form.accessKeyId,
+      accessKeySecret:this.form.accessKeySecret,
+      private:!!this.form.private,
+      signedExpire:Number(this.form.signedExpire)||0,
+      urlPrefix:this.form.urlPrefix,
+      businessToken:this.form.businessToken,
+      clearBusinessToken:!!this.form.clearBusinessToken,
+      ownOssLinkMode:this.form.ownOssLinkMode||'register',
+      reuploadDeleteSource:!!this.form.reuploadDeleteSource,
+      deleteRemoveOss:!!this.form.deleteRemoveOss
+    }
+  },
+
   async saveOss(){
     this.ossMsg=''
     this.ossOk=''
     this.savingOss=true
     try{
-      const body={
-        endpoint:this.form.endpoint,
-        bucket:this.form.bucket,
-        accessKeyId:this.form.accessKeyId,
-        accessKeySecret:this.form.accessKeySecret,
-        private:!!this.form.private,
-        signedExpire:Number(this.form.signedExpire)||0,
-        urlPrefix:this.form.urlPrefix,
-        businessToken:this.form.businessToken,
-        clearBusinessToken:!!this.form.clearBusinessToken
-      }
       const d=await this.request('/api/settings',{
         method:'PUT',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(body)
+        body:JSON.stringify(this.settingsPayload())
       })
       if(d.code===0){
         this.applyView(d.data)
@@ -419,6 +506,28 @@ function app(){return{
       if(!e.unauthorized) this.ossMsg='请求失败：'+e.message
     }
     this.savingOss=false
+  },
+
+  async savePublic(){
+    this.publicMsg=''
+    this.publicOk=''
+    this.savingPublic=true
+    try{
+      const d=await this.request('/api/settings',{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(this.settingsPayload())
+      })
+      if(d.code===0){
+        this.applyView(d.data)
+        this.publicOk='已保存公共设置'
+      }else{
+        this.publicMsg=d.msg||'保存失败'
+      }
+    }catch(e){
+      if(!e.unauthorized) this.publicMsg='请求失败：'+e.message
+    }
+    this.savingPublic=false
   },
 
   async loadCategories(){

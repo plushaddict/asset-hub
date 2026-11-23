@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AssetHub 素材列表</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/pinyin-pro@3.26.0/dist/index.js"></script>
 <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
 <style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}[x-cloak]{display:none!important}</style>
 </head>
@@ -97,6 +98,14 @@
   </div>
 
   <div class="flex justify-end items-center gap-2 mb-3">
+    <div class="inline-flex rounded-lg border bg-white overflow-hidden text-sm mr-auto">
+      <button type="button" class="px-3 py-1.5"
+              :class="viewMode==='card' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'"
+              @click="setViewMode('card')">卡片</button>
+      <button type="button" class="px-3 py-1.5 border-l"
+              :class="viewMode==='list' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'"
+              @click="setViewMode('list')">列表</button>
+    </div>
     <div class="relative" @click.outside="sortByOpen=false">
       <button type="button" @click="sortByOpen=!sortByOpen;sortOrderOpen=false"
               class="inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm bg-white hover:bg-slate-50 text-left">
@@ -149,22 +158,16 @@
     </template>
   </div>
 
-  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" x-show="list.length>0">
-    <template x-for="item in list" :key="item.id">
-      <div class="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition">
-        <div class="h-36 bg-slate-50 flex items-center justify-center border-b overflow-hidden">
-          <template x-if="item.primaryUrl">
-            <img :src="item.primaryUrl" class="max-h-36 max-w-full object-contain" alt="">
-          </template>
-          <template x-if="!item.primaryUrl">
-            <span class="text-xs text-slate-300">暂无预览图</span>
-          </template>
-        </div>
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" x-show="list.length>0 && viewMode==='card'">
+    <template x-for="item in list" :key="'card-'+item.id">
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition cursor-pointer"
+           @click="location.href='/asset/'+item.id">
         <div class="p-3">
           <div class="flex items-center justify-between gap-2">
-            <a :href="'/asset/'+item.id" class="font-medium text-slate-800 hover:text-blue-600 truncate" x-text="item.assetName"></a>
+            <a :href="'/asset/'+item.id" class="font-medium text-slate-800 hover:text-blue-600 truncate" x-text="item.displayName || item.assetName"></a>
             <span class="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" x-text="item.categoryName || '未分类'"></span>
           </div>
+          <div class="text-[10px] text-slate-400 font-mono truncate" x-text="item.assetName"></div>
           <div class="flex flex-wrap gap-1 mt-1.5 min-h-[18px]">
             <template x-if="!item.tags || item.tags.length===0">
               <span class="text-xs text-slate-400">无标签</span>
@@ -174,15 +177,70 @@
             </template>
           </div>
           <div class="text-[11px] text-slate-400 mt-1">
-            <span x-text="item.fileCount"></span> 个格式 · <span x-text="item.createTime"></span>
+            <span x-text="item.createTime"></span> · <span x-text="item.fileCount"></span> 个格式
           </div>
-          <div class="flex gap-3 mt-3 text-xs">
-            <a :href="'/asset/'+item.id" class="text-blue-600 hover:underline">详情 / 上传</a>
-            <button type="button" @click="remove(item)" class="text-red-500 hover:underline">删除</button>
+          <div class="flex justify-end gap-3 mt-3 text-xs">
+            <a :href="'/asset/'+item.id" class="text-blue-600 hover:underline">详情</a>
+            <button type="button" @click.stop="remove(item)" class="text-red-500 hover:underline">删除</button>
           </div>
         </div>
       </div>
     </template>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm overflow-x-auto"
+       x-show="list.length>0 && viewMode==='list'">
+    <table class="w-full text-sm text-left border-collapse table-fixed">
+      <colgroup>
+        <col style="width:9.5rem">
+        <col style="width:5.5rem">
+        <col>
+        <col style="width:3.75rem">
+        <col style="width:9.75rem">
+        <col style="width:5.5rem">
+      </colgroup>
+      <thead>
+        <tr class="bg-slate-50 text-xs text-slate-500 border-b border-slate-100">
+          <th class="px-3 py-2.5 font-medium whitespace-nowrap">显示名</th>
+          <th class="px-2 py-2.5 font-medium whitespace-nowrap">分类</th>
+          <th class="px-3 py-2.5 font-medium">标签</th>
+          <th class="px-2 py-2.5 font-medium whitespace-nowrap">格式数</th>
+          <th class="px-2 py-2.5 font-medium whitespace-nowrap">创建时间</th>
+          <th class="px-3 py-2.5 font-medium whitespace-nowrap text-right">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="item in list" :key="'list-'+item.id">
+          <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-pointer"
+              @click="location.href='/asset/'+item.id">
+            <td class="px-3 py-3 font-medium text-slate-800 truncate"
+                x-text="item.displayName || item.assetName"></td>
+            <td class="px-2 py-3 whitespace-nowrap">
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600"
+                    x-text="item.categoryName || '未分类'"></span>
+            </td>
+            <td class="px-3 py-3">
+              <div class="flex flex-wrap gap-1">
+                <template x-if="!item.tags || item.tags.length===0">
+                  <span class="text-xs text-slate-400">无标签</span>
+                </template>
+                <template x-for="t in (item.tags || [])" :key="'lt-'+item.id+'-'+t.id">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600" x-text="t.name"></span>
+                </template>
+              </div>
+            </td>
+            <td class="px-2 py-3 text-slate-500 whitespace-nowrap"
+                x-text="(item.fileCount || 0) + ' 个'"></td>
+            <td class="px-2 py-3 text-slate-500 whitespace-nowrap tabular-nums text-[12px]"
+                x-text="item.createTime"></td>
+            <td class="px-3 py-3 whitespace-nowrap text-right text-xs">
+              <a :href="'/asset/'+item.id" class="text-blue-600 hover:underline" @click.stop>详情</a>
+              <button type="button" @click.stop="remove(item)" class="text-red-500 hover:underline ml-2">删除</button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
   </div>
 
   <div class="flex items-center justify-between mt-6 text-sm text-slate-500" x-show="total>0">
@@ -205,9 +263,13 @@
         还没有分类，无法新建。
         <button type="button" class="underline" @click="location.href='/settings?tab=category'">去设置添加</button>
       </p>
-      <label class="block text-xs text-slate-500 mb-1">素材名称 *（字母/数字/下划线/短横线）</label>
+      <label class="block text-xs text-slate-500 mb-1">显示名 *（可中文）</label>
       <input class="w-full mb-3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-             placeholder="如 logo_book、book_cover_001" x-model="form.assetName">
+             placeholder="如 百度搜索" x-model="form.displayName" @input="onDisplayNameInput()">
+      <label class="block text-xs text-slate-500 mb-1">资源名（OSS / 业务查询，字母数字_-）</label>
+      <input class="w-full mb-3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+             placeholder="将自动生成或请手填" x-model="form.assetName"
+             @input="assetNameManual=true">
       <label class="block text-xs text-slate-500 mb-1">分类 *</label>
       <select class="w-full mb-3 px-3 py-2 border rounded-lg text-sm bg-white" x-model.number="form.categoryId" :disabled="categories.length===0">
         <option value="0" disabled>请选择分类</option>
@@ -292,18 +354,19 @@
 function app(){return{
   list:[],total:0,page:1,size:12,keyword:'',categoryId:0,filterTagIds:[],loading:false,
   sortBy:'createTime',sortOrder:'desc',sortByOpen:false,sortOrderOpen:false,
+  viewMode:'card',
   sortByOptions:[
     {value:'createTime',label:'创建时间'},
     {value:'updateTime',label:'修改时间'},
-    {value:'assetName',label:'名称'},
-    {value:'sort',label:'手动权重'}
+    {value:'assetName',label:'名称'}
   ],
   categories:[],tags:[],categoryOpen:false,tagFilterOpen:false,
   status:{ossReady:false,ossError:'',categoryCount:0,setupComplete:false},
   statusLoaded:false,metaLoaded:false,
   author:'blackcat',version:'v0.0.4',
   showCreate:false,msg:'',tagInput:'',
-  form:{assetName:'',categoryId:0,tagIds:[],tagNames:[],remark:''},
+  assetNameManual:false,
+  form:{displayName:'',assetName:'',categoryId:0,tagIds:[],tagNames:[],remark:''},
   createFiles:[], createUrlInput:'', createAssetId:null, uploading:false, uploadOssHint:false,
   createPhase:'', // '' | 'meta' | 'upload' | 'partial'
   allowedCreateSuffixes:['png','jpg','jpeg','svg','webp','ico','gif'],
@@ -312,6 +375,38 @@ function app(){return{
   totalPages(){return Math.max(1,Math.ceil(this.total/this.size))},
   hasFilter(){return !!(this.keyword||this.categoryId||this.filterTagIds.length)},
   footerText(){return '作者：'+this.author+' · 版本：'+this.version},
+
+  toast(msg){
+    const el=document.createElement('div')
+    el.className='fixed top-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs px-4 py-2 rounded-lg shadow-lg z-[999]'
+    el.textContent=msg; document.body.appendChild(el)
+    setTimeout(()=>el.remove(),2500)
+  },
+
+  slugFromDisplayName(s){
+    s=(s||'').trim()
+    if(!s) return ''
+    let raw=s
+    try{
+      const pp=window.pinyinPro||(window.pinyin&&window.pinyin.pinyin?window.pinyin:null)
+      if(pp&&pp.pinyin){
+        raw=pp.pinyin(s,{toneType:'none',type:'array'}).join('')
+      }
+    }catch(e){}
+    if(raw===s){
+      const latin=s.replace(/[^\x00-\x7F]+/g,'')
+      if(latin) raw=latin
+      else if(/[^\x00-\x7F]/.test(s)) return ''
+    }
+    let out=String(raw).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'')
+    if(out.length>64) out=out.slice(0,64).replace(/_+$/,'')
+    if(!out||!/^[a-z0-9]/i.test(out[0])) return ''
+    return out
+  },
+  onDisplayNameInput(){
+    if(this.assetNameManual) return
+    this.form.assetName=this.slugFromDisplayName(this.form.displayName)
+  },
 
   async request(url,opts){
     const res=await fetch(url,opts)
@@ -324,7 +419,21 @@ function app(){return{
     return res.json()
   },
 
+  readViewMode(){
+    try{
+      const v=localStorage.getItem('assethub.listViewMode')
+      if(v==='card'||v==='list') return v
+    }catch(e){/* private mode */}
+    return 'card'
+  },
+  setViewMode(m){
+    if(m!=='card'&&m!=='list') return
+    this.viewMode=m
+    try{localStorage.setItem('assethub.listViewMode',m)}catch(e){/* ignore */}
+  },
+
   async init(){
+    this.viewMode=this.readViewMode()
     await Promise.all([this.loadStatus(),this.loadMeta(),this.loadFooter(),this.load()])
   },
 
@@ -522,6 +631,8 @@ function app(){return{
 
   closeCreate(){
     const needRefresh=!!this.createAssetId
+    this.assetNameManual=false
+    this._renameNote=''
     this.showCreate=false
     this.createFiles=[]
     this.createUrlInput=''
@@ -538,7 +649,9 @@ function app(){return{
 
   openCreate(){
     if(!this.categories.length) return
-    this.form={assetName:'',categoryId:this.categories[0].id,tagIds:[],tagNames:[],remark:''}
+    this.assetNameManual=false
+    this._renameNote=''
+    this.form={displayName:'',assetName:'',categoryId:this.categories[0].id,tagIds:[],tagNames:[],remark:''}
     this.tagInput=''
     this.msg=''
     this.createFiles=[]
@@ -616,7 +729,7 @@ function app(){return{
     this.msg=''
     this.uploadOssHint=false
     if((this.tagInput||'').trim()) this.addTagName()
-    if(!this.form.assetName.trim()){this.msg='请填写素材名称';return}
+    if(!this.form.displayName.trim()){this.msg='请填写显示名';return}
     if(!this.form.categoryId){this.msg='请选择分类';return}
 
     // 部分失败后的重试：只上传，不再建档
@@ -645,8 +758,10 @@ function app(){return{
     const fileErr=this.validateCreateFiles()
     if(fileErr){this.msg=fileErr;this.uploadOssHint=fileErr.indexOf('OSS')>=0;return}
 
+    const submittedName=this.form.assetName.trim()
     const body={
-      assetName:this.form.assetName.trim(),
+      displayName:this.form.displayName.trim(),
+      assetName:submittedName,
       categoryId:Number(this.form.categoryId),
       tagIds:this.form.tagIds.slice(),
       tagNames:this.form.tagNames.slice(),
@@ -670,6 +785,20 @@ function app(){return{
       }
       assetId=d.data && d.data.id
       this.createAssetId=assetId
+      const finalName=d.data&&d.data.assetName
+      if(finalName){
+        this.form.assetName=finalName
+        this.assetNameManual=true
+        if(submittedName&&finalName!==submittedName){
+          this._renameNote='资源名已调整为 '+finalName
+          this.toast(this._renameNote)
+        }else if(!submittedName){
+          this._renameNote='已生成资源名 '+finalName
+          this.toast(this._renameNote)
+        }else{
+          this._renameNote=''
+        }
+      }
     }catch(e){
       if(!e.unauthorized) this.msg='请求失败：'+e.message
       this.uploading=false
@@ -701,11 +830,12 @@ function app(){return{
       return
     }
     this.createPhase='partial'
-    this.msg=result.notes.join('；')
+    const notes=result.notes.join('；')
+    this.msg=this._renameNote ? (this._renameNote+'；'+notes) : notes
   },
 
   async remove(item){
-    if(!confirm('确定删除素材「'+item.assetName+'」？\n会同时删除该素材下所有 OSS 文件，不可恢复。')) return
+    if(!confirm('确定删除素材「'+(item.displayName||item.assetName)+'」？\n是否同步删除 OSS 对象见「设置 → 公共」。')) return
     try{
       const d=await this.request('/api/asset/'+item.id,{method:'DELETE'})
       if(d.code===0) this.load()
