@@ -2,11 +2,23 @@ package service
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"assethub/internal/model"
 	"assethub/internal/repo"
 )
+
+func TestNormalizeFileRemark(t *testing.T) {
+	s, err := normalizeFileRemark("  彩色  ")
+	if err != nil || s != "彩色" {
+		t.Fatalf("%q %v", s, err)
+	}
+	long := strings.Repeat("字", 201)
+	if _, err := normalizeFileRemark(long); err == nil {
+		t.Fatal("expected length error")
+	}
+}
 
 func TestCreateAndUpdateAssetTags(t *testing.T) {
 	db, err := repo.Open(filepath.Join(t.TempDir(), "t.db"))
@@ -21,7 +33,7 @@ func TestCreateAndUpdateAssetTags(t *testing.T) {
 	catRepo := repo.NewCategoryRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	assetRepo := repo.NewAssetRepo(db)
-	svc := NewAssetService(assetRepo, repo.NewAssetFileRepo(db), catRepo, tagRepo, NewSettingsService(nil, nil, nil))
+	svc := NewAssetService(assetRepo, repo.NewAssetFileRepo(db), catRepo, tagRepo, NewSettingsService(nil, nil))
 
 	catID, err := catRepo.Insert(&model.Category{Name: "图标", OssPrefix: "icons/", Sort: 0})
 	if err != nil {

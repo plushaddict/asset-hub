@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS asset_file (
     height          INTEGER,
     oss_object_key  TEXT NOT NULL,
     is_primary      INTEGER NOT NULL DEFAULT 0,
+    remark          TEXT NOT NULL DEFAULT '',
     create_time     TEXT NOT NULL DEFAULT '',
     del_flag        INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (asset_id) REFERENCES asset(id)
@@ -92,5 +93,37 @@ CREATE INDEX IF NOT EXISTS idx_af_asset ON asset_file(asset_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_af_asset_suffix ON asset_file(asset_id, suffix) WHERE del_flag = 0;
 `
 	_, err := db.Exec(schema)
+	if err != nil {
+		return err
+	}
+	return ensureAssetFileRemarkColumn(db)
+}
+
+func ensureAssetFileRemarkColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(asset_file)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	has := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "remark" {
+			has = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE asset_file ADD COLUMN remark TEXT NOT NULL DEFAULT ''`)
 	return err
 }

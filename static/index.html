@@ -141,7 +141,7 @@
 
   <!-- 新建素材弹窗 -->
   <div x-cloak x-show="showCreate" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-xl shadow-xl w-[480px] max-w-full max-h-[90vh] overflow-y-auto p-5" @click.outside="showCreate=false">
+    <div class="bg-white rounded-xl shadow-xl w-[480px] max-w-full max-h-[90vh] overflow-y-auto p-5" @click.outside="closeCreate()">
       <h3 class="font-bold text-slate-800 mb-4">新建素材</h3>
       <p x-show="categories.length===0" class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
         还没有分类，无法新建。
@@ -179,11 +179,45 @@
              placeholder="输入新标签，回车添加" x-model="tagInput" @keydown.enter.prevent="addTagName()">
       <label class="block text-xs text-slate-500 mb-1">备注（可填书籍ID等）</label>
       <textarea class="w-full mb-3 px-3 py-2 border rounded-lg text-sm" rows="2" x-model="form.remark"></textarea>
+      <label class="block text-xs text-slate-500 mb-1">格式文件（可选，可多选）</label>
+      <p class="text-[11px] text-slate-400 mb-2">同一素材下每种后缀一个文件；可稍后在详情页继续添加</p>
+      <div x-cloak x-show="statusLoaded && !status.ossReady && createFiles.length"
+           class="mb-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        OSS 未就绪，无法带文件保存。
+        <button type="button" class="underline font-medium" @click="location.href='/settings?tab=oss'">去设置</button>
+        或清空文件后仅保存素材。
+      </div>
+      <div class="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer hover:border-blue-400 mb-2"
+           @dragover.prevent @drop.prevent="onDropCreate($event)" @click="$refs.createFileInput.click()">
+        <div class="text-sm text-slate-600">点击选择文件，或拖拽到此处（可多选）</div>
+        <div class="text-[11px] text-slate-400 mt-1">支持 png / jpg / jpeg / svg / webp / ico / gif，单文件 ≤20MB</div>
+        <input type="file" class="hidden" x-ref="createFileInput" multiple
+               accept=".png,.jpg,.jpeg,.svg,.webp,.ico,.gif" @change="pickCreateFiles($event)">
+      </div>
+      <ul x-show="createFiles.length" class="mb-3 space-y-1 max-h-28 overflow-y-auto">
+        <template x-for="(f, idx) in createFiles" :key="idx+'-'+f.file.name+'-'+f.file.size">
+          <li class="flex items-center justify-between gap-2 text-xs bg-slate-50 rounded-lg px-2 py-1.5 flex-wrap">
+            <span class="truncate text-slate-700 min-w-0" x-text="f.file.name"></span>
+            <span class="shrink-0 text-slate-400" x-text="fmtSize(f.file.size)"></span>
+            <input class="flex-1 min-w-[6rem] px-1.5 py-0.5 border rounded text-xs" placeholder="说明（可选）"
+                   x-model="f.remark" @click.stop maxlength="200">
+            <button type="button" class="shrink-0 text-slate-400 hover:text-red-500" @click.stop="removeCreateFile(idx)">移除</button>
+          </li>
+        </template>
+      </ul>
       <div class="text-red-500 text-xs min-h-4 mb-2" x-text="msg"></div>
-      <div class="flex justify-end gap-2">
-        <button type="button" @click="showCreate=false" class="border px-4 py-2 rounded-lg text-sm text-slate-500">取消</button>
-        <button type="button" @click="submitCreate()" :disabled="categories.length===0"
-                class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-40">保存</button>
+      <div x-show="uploadOssHint" class="text-xs text-amber-800 mb-1">
+        <button type="button" class="underline font-medium" @click="location.href='/settings?tab=oss'">前往设置配置 OSS</button>
+      </div>
+      <div class="flex justify-end gap-2 items-center">
+        <a x-show="createPhase==='partial' && createAssetId"
+           :href="'/asset/'+createAssetId"
+           class="mr-auto text-xs text-blue-600 hover:underline">去详情</a>
+        <button type="button" @click="closeCreate()" class="border px-4 py-2 rounded-lg text-sm text-slate-500">取消</button>
+        <button type="button" @click="submitCreate()"
+                :disabled="categories.length===0 || uploading"
+                class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-40"
+                x-text="primaryCreateLabel()"></button>
       </div>
     </div>
   </div>
@@ -197,6 +231,10 @@ function app(){return{
   statusLoaded:false,metaLoaded:false,
   showCreate:false,msg:'',tagInput:'',
   form:{assetName:'',categoryId:0,tagIds:[],tagNames:[],remark:''},
+  createFiles:[], createAssetId:null, uploading:false, uploadOssHint:false,
+  createPhase:'', // '' | 'meta' | 'upload' | 'partial'
+  allowedCreateSuffixes:['png','jpg','jpeg','svg','webp','ico','gif'],
+  maxCreateFileSize:20*1024*1024,
 
   totalPages(){return Math.max(1,Math.ceil(this.total/this.size))},
   hasFilter(){return !!(this.keyword||this.categoryId||this.filterTagIds.length)},
@@ -269,11 +307,99 @@ function app(){return{
     else this.filterTagIds=this.filterTagIds.concat([id])
   },
 
+  fmtSize(n){
+    if(!n) return '—'
+    if(n<1024) return n+' B'
+    if(n<1048576) return (n/1024).toFixed(1)+' KB'
+    return (n/1048576).toFixed(2)+' MB'
+  },
+
+  fileSuffix(name){
+    const i=String(name||'').lastIndexOf('.')
+    if(i<0) return ''
+    return String(name).slice(i+1).toLowerCase()
+  },
+
+  primaryCreateLabel(){
+    if(this.uploading){
+      if(this.createPhase==='meta') return '保存中…'
+      return '上传中…'
+    }
+    if(this.createPhase==='partial' && this.createAssetId) return '重试失败项'
+    if(this.createFiles.length) return '保存并上传'
+    return '保存'
+  },
+
+  validateCreateFiles(){
+    const files=this.createFiles||[]
+    if(!files.length) return ''
+    if(this.statusLoaded && !this.status.ossReady){
+      return 'OSS 未就绪，请先到设置中配置，或清空文件后仅保存素材'
+    }
+    const seen={}
+    for(const item of files){
+      const f=item.file
+      const suf=this.fileSuffix(f.name)
+      if(!suf || this.allowedCreateSuffixes.indexOf(suf)<0){
+        return '不支持的格式：'+(suf||'(无后缀)')+'（允许 png/jpg/jpeg/svg/webp/ico/gif）'
+      }
+      if(f.size>this.maxCreateFileSize){
+        return f.name+' 超过 20MB 限制'
+      }
+      if(seen[suf]) return '同批次不能有重复后缀：.'+suf
+      seen[suf]=true
+    }
+    return ''
+  },
+
+  addCreateFiles(fileList){
+    const incoming=Array.from(fileList||[])
+    if(!incoming.length) return
+    this.msg=''
+    this.uploadOssHint=false
+    // 追加；随后用 validateCreateFiles 在提交时拦截重复后缀
+    this.createFiles=this.createFiles.concat(incoming.map(file=>({file,remark:''})))
+  },
+
+  removeCreateFile(idx){
+    this.createFiles=this.createFiles.filter((_,i)=>i!==idx)
+    this.msg=''
+  },
+
+  pickCreateFiles(e){
+    this.addCreateFiles(e.target.files)
+    if(e.target) e.target.value=''
+  },
+
+  onDropCreate(e){
+    this.addCreateFiles((e.dataTransfer&&e.dataTransfer.files)||[])
+  },
+
+  closeCreate(){
+    const needRefresh=!!this.createAssetId
+    this.showCreate=false
+    this.createFiles=[]
+    this.createAssetId=null
+    this.uploading=false
+    this.uploadOssHint=false
+    this.createPhase=''
+    this.msg=''
+    if(needRefresh){
+      this.loadMeta()
+      this.search()
+    }
+  },
+
   openCreate(){
     if(!this.categories.length) return
     this.form={assetName:'',categoryId:this.categories[0].id,tagIds:[],tagNames:[],remark:''}
     this.tagInput=''
     this.msg=''
+    this.createFiles=[]
+    this.createAssetId=null
+    this.uploading=false
+    this.uploadOssHint=false
+    this.createPhase=''
     this.showCreate=true
   },
 
@@ -298,11 +424,75 @@ function app(){return{
     this.form.tagNames=this.form.tagNames.filter(n=>n!==name)
   },
 
+  looksLikeOss(msg){
+    return !!(msg&&(msg.indexOf('OSS')>=0||msg.indexOf('设置')>=0))
+  },
+
+  async uploadCreateFiles(assetId){
+    const remaining=[]
+    const notes=[]
+    for(const item of this.createFiles){
+      const f=item.file
+      const fd=new FormData()
+      fd.append('file', f)
+      fd.append('remark', (item.remark||'').trim())
+      try{
+        const res=await fetch('/api/asset/'+assetId+'/files',{method:'POST',body:fd})
+        if(res.status===401){location.href='/login';return {unauthorized:true}}
+        const d=await res.json()
+        if(d.code===0){
+          continue
+        }
+        const m=d.msg||'上传失败'
+        if(m.indexOf('已存在')>=0){
+          notes.push(f.name+'：已存在，跳过')
+          continue
+        }
+        remaining.push(item)
+        notes.push(f.name+'：'+m)
+        this.uploadOssHint=this.looksLikeOss(m)||(this.statusLoaded&&!this.status.ossReady)
+      }catch(e){
+        remaining.push(item)
+        notes.push(f.name+'：'+e.message)
+      }
+    }
+    this.createFiles=remaining
+    return {remaining, notes}
+  },
+
   async submitCreate(){
     this.msg=''
+    this.uploadOssHint=false
     if((this.tagInput||'').trim()) this.addTagName()
     if(!this.form.assetName.trim()){this.msg='请填写素材名称';return}
     if(!this.form.categoryId){this.msg='请选择分类';return}
+
+    // 部分失败后的重试：只上传，不再建档
+    if(this.createPhase==='partial' && this.createAssetId){
+      const err=this.validateCreateFiles()
+      if(err){this.msg=err;this.uploadOssHint=err.indexOf('OSS')>=0;return}
+      this.uploading=true
+      this.createPhase='upload'
+      const result=await this.uploadCreateFiles(this.createAssetId)
+      this.uploading=false
+      if(result.unauthorized) return
+      if(!result.remaining.length){
+        this.createPhase=''
+        this.createAssetId=null
+        this.showCreate=false
+        this.createFiles=[]
+        await this.loadMeta()
+        this.search()
+        return
+      }
+      this.createPhase='partial'
+      this.msg=result.notes.join('；')
+      return
+    }
+
+    const fileErr=this.validateCreateFiles()
+    if(fileErr){this.msg=fileErr;this.uploadOssHint=fileErr.indexOf('OSS')>=0;return}
+
     const body={
       assetName:this.form.assetName.trim(),
       categoryId:Number(this.form.categoryId),
@@ -310,18 +500,56 @@ function app(){return{
       tagNames:this.form.tagNames.slice(),
       remark:this.form.remark||''
     }
+
+    this.uploading=true
+    this.createPhase='meta'
+    let assetId=null
     try{
-      const d=await this.request('/api/asset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
-      if(d.code===0){
-        this.showCreate=false
-        await this.loadMeta()
-        this.search()
-      }else{
+      const d=await this.request('/api/asset',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      })
+      if(d.code!==0){
         this.msg=d.msg||'保存失败'
+        this.uploading=false
+        this.createPhase=''
+        return
       }
+      assetId=d.data && d.data.id
+      this.createAssetId=assetId
     }catch(e){
       if(!e.unauthorized) this.msg='请求失败：'+e.message
+      this.uploading=false
+      this.createPhase=''
+      return
     }
+
+    if(!this.createFiles.length){
+      this.uploading=false
+      this.createPhase=''
+      this.createAssetId=null
+      this.showCreate=false
+      await this.loadMeta()
+      this.search()
+      return
+    }
+
+    this.createPhase='upload'
+    const result=await this.uploadCreateFiles(assetId)
+    this.uploading=false
+    if(result.unauthorized) return
+    if(!result.remaining.length){
+      this.createPhase=''
+      this.createAssetId=null
+      this.showCreate=false
+      this.createFiles=[]
+      await this.loadMeta()
+      this.search()
+      return
+    }
+    this.createPhase='partial'
+    this.msg=result.notes.join('；')
   },
 
   async remove(item){

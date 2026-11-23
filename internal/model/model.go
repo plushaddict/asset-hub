@@ -43,5 +43,6 @@ type AssetFile struct {
 	ObjectKey  string `json:"objectKey"`
 	URL        string `json:"url"`
 	IsPrimary  int    `json:"isPrimary"`
+	Remark     string `json:"remark"`
 	CreateTime string `json:"createTime"`
 }

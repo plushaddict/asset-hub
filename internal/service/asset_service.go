@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	_ "golang.org/x/image/webp"
 
@@ -19,7 +20,18 @@ import (
 	"assethub/internal/repo"
 )
 
-const MaxUploadSize = 20 << 20 // 20MB
+const (
+	MaxUploadSize      = 20 << 20 // 20MB
+	MaxFileRemarkRunes = 200
+)
+
+func normalizeFileRemark(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if utf8.RuneCountInString(s) > MaxFileRemarkRunes {
+		return "", errors.New("说明不能超过 200 字")
+	}
+	return s, nil
+}
 
 var (
 	allowedSuffix = map[string]bool{
@@ -274,7 +286,11 @@ func (s *AssetService) ListFiles(assetID int64) ([]*model.AssetFile, error) {
 }
 
 // UploadFile 上传一个新格式文件（同一素材下后缀唯一）。对象键使用素材所属分类的 ossPrefix。
-func (s *AssetService) UploadFile(assetID int64, header *multipart.FileHeader) (*model.AssetFile, error) {
+func (s *AssetService) UploadFile(assetID int64, header *multipart.FileHeader, remark string) (*model.AssetFile, error) {
+	remark, err := normalizeFileRemark(remark)
+	if err != nil {
+		return nil, err
+	}
 	a, err := s.assetRepo.GetByID(assetID)
 	if err != nil {
 		return nil, mapNotFound(err, "素材不存在")
@@ -344,6 +360,7 @@ func (s *AssetService) UploadFile(assetID int64, header *multipart.FileHeader) (
 		Height:    h,
 		ObjectKey: key,
 		IsPrimary: primary,
+		Remark:    remark,
 	}
 	id, err := s.fileRepo.Insert(af)
 	if err != nil {
@@ -352,6 +369,28 @@ func (s *AssetService) UploadFile(assetID int64, header *multipart.FileHeader) (
 	af.ID = id
 	af.URL, _ = o.URL(key)
 	return af, nil
+}
+
+func (s *AssetService) UpdateFileRemark(assetID, fileID int64, remark string) (*model.AssetFile, error) {
+	f, err := s.fileRepo.GetByID(fileID)
+	if err != nil || f.AssetID != assetID {
+		return nil, errors.New("文件不存在")
+	}
+	remark, err = normalizeFileRemark(remark)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.fileRepo.UpdateRemark(fileID, remark); err != nil {
+		return nil, err
+	}
+	f.Remark = remark
+	o := s.oss()
+	if o != nil && o.Ready() {
+		if u, err := o.URL(f.ObjectKey); err == nil {
+			f.URL = u
+		}
+	}
+	return f, nil
 }
 
 func (s *AssetService) SetPrimary(assetID, fileID int64) error {

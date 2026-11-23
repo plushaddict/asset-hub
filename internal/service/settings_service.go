@@ -67,14 +67,9 @@ type SettingsService struct {
 }
 
 // NewSettingsService 读库并尝试创建 OSS。失败不退出：持有 Ready=false 的实例。
-// counter 为 nil 时 CategoryCount 恒为 0。cfg 非 nil 时先 EnsureSeeded（已有行不覆盖）。
-func NewSettingsService(r *repo.SettingsRepo, counter CategoryCounter, cfg *config.Config) *SettingsService {
+// counter 为 nil 时 CategoryCount 恒为 0。无设置行时提示去设置页配置。
+func NewSettingsService(r *repo.SettingsRepo, counter CategoryCounter) *SettingsService {
 	s := &SettingsService{repo: r, counter: counter}
-	if cfg != nil && r != nil {
-		if err := r.EnsureSeeded(cfg); err != nil {
-			log.Printf("写入设置种子失败：%v", err)
-		}
-	}
 	if r == nil {
 		s.oss = &OSSService{errMsg: "尚未配置 OSS"}
 		return s

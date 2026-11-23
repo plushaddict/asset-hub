@@ -17,9 +17,9 @@ func NewAssetFileRepo(db *sql.DB) *AssetFileRepo {
 func (r *AssetFileRepo) Insert(f *model.AssetFile) (int64, error) {
 	f.CreateTime = repoNow()
 	res, err := r.db.Exec(
-		`INSERT INTO asset_file(asset_id, file_name, suffix, file_size, width, height, oss_object_key, is_primary, create_time)
-		 VALUES (?,?,?,?,?,?,?,?,?)`,
-		f.AssetID, f.FileName, f.Suffix, f.FileSize, f.Width, f.Height, f.ObjectKey, f.IsPrimary, f.CreateTime)
+		`INSERT INTO asset_file(asset_id, file_name, suffix, file_size, width, height, oss_object_key, is_primary, remark, create_time)
+		 VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		f.AssetID, f.FileName, f.Suffix, f.FileSize, f.Width, f.Height, f.ObjectKey, f.IsPrimary, f.Remark, f.CreateTime)
 	if err != nil {
 		return 0, err
 	}
@@ -28,7 +28,7 @@ func (r *AssetFileRepo) Insert(f *model.AssetFile) (int64, error) {
 
 func (r *AssetFileRepo) ListByAssetID(assetID int64) ([]*model.AssetFile, error) {
 	rows, err := r.db.Query(
-		`SELECT id, asset_id, file_name, suffix, file_size, width, height, oss_object_key, is_primary, create_time
+		`SELECT id, asset_id, file_name, suffix, file_size, width, height, oss_object_key, is_primary, remark, create_time
 		 FROM asset_file WHERE asset_id = ? AND del_flag = 0
 		 ORDER BY is_primary DESC, id ASC`, assetID)
 	if err != nil {
@@ -40,7 +40,7 @@ func (r *AssetFileRepo) ListByAssetID(assetID int64) ([]*model.AssetFile, error)
 	for rows.Next() {
 		var f model.AssetFile
 		if err = rows.Scan(&f.ID, &f.AssetID, &f.FileName, &f.Suffix, &f.FileSize,
-			&f.Width, &f.Height, &f.ObjectKey, &f.IsPrimary, &f.CreateTime); err != nil {
+			&f.Width, &f.Height, &f.ObjectKey, &f.IsPrimary, &f.Remark, &f.CreateTime); err != nil {
 			return nil, err
 		}
 		list = append(list, &f)
@@ -51,10 +51,10 @@ func (r *AssetFileRepo) ListByAssetID(assetID int64) ([]*model.AssetFile, error)
 func (r *AssetFileRepo) GetByID(id int64) (*model.AssetFile, error) {
 	var f model.AssetFile
 	err := r.db.QueryRow(
-		`SELECT id, asset_id, file_name, suffix, file_size, width, height, oss_object_key, is_primary, create_time
+		`SELECT id, asset_id, file_name, suffix, file_size, width, height, oss_object_key, is_primary, remark, create_time
 		 FROM asset_file WHERE id = ? AND del_flag = 0`, id).
 		Scan(&f.ID, &f.AssetID, &f.FileName, &f.Suffix, &f.FileSize,
-			&f.Width, &f.Height, &f.ObjectKey, &f.IsPrimary, &f.CreateTime)
+			&f.Width, &f.Height, &f.ObjectKey, &f.IsPrimary, &f.Remark, &f.CreateTime)
 	if err != nil {
 		return nil, err
 	}
@@ -95,15 +95,20 @@ func (r *AssetFileRepo) SetPrimary(assetID, fileID int64) error {
 func (r *AssetFileRepo) PrimaryFile(assetID int64) (*model.AssetFile, error) {
 	var f model.AssetFile
 	err := r.db.QueryRow(
-		`SELECT id, asset_id, file_name, suffix, file_size, width, height, oss_object_key, is_primary, create_time
+		`SELECT id, asset_id, file_name, suffix, file_size, width, height, oss_object_key, is_primary, remark, create_time
 		 FROM asset_file WHERE asset_id = ? AND del_flag = 0
 		 ORDER BY is_primary DESC, id ASC LIMIT 1`, assetID).
 		Scan(&f.ID, &f.AssetID, &f.FileName, &f.Suffix, &f.FileSize,
-			&f.Width, &f.Height, &f.ObjectKey, &f.IsPrimary, &f.CreateTime)
+			&f.Width, &f.Height, &f.ObjectKey, &f.IsPrimary, &f.Remark, &f.CreateTime)
 	if err != nil {
 		return nil, err
 	}
 	return &f, nil
+}
+
+func (r *AssetFileRepo) UpdateRemark(id int64, remark string) error {
+	_, err := r.db.Exec(`UPDATE asset_file SET remark = ? WHERE id = ? AND del_flag = 0`, remark, id)
+	return err
 }
 
 func (r *AssetFileRepo) SoftDelete(id int64) error {

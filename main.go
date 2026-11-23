@@ -39,8 +39,8 @@ func main() {
 	settingsRepo := repo.NewSettingsRepo(db)
 	categoryRepo := repo.NewCategoryRepo(db)
 	tagRepo := repo.NewTagRepo(db)
-	// EnsureSeeded 在 NewSettingsService 内完成；OSS 构造失败只记 ready=false，不退出。
-	settingsSvc := service.NewSettingsService(settingsRepo, categoryRepo, cfg)
+	// OSS / 业务 token 仅来自库与设置页；未配置时 ready=false，不退出。
+	settingsSvc := service.NewSettingsService(settingsRepo, categoryRepo)
 	assetSvc := service.NewAssetService(
 		repo.NewAssetRepo(db), repo.NewAssetFileRepo(db),
 		categoryRepo, tagRepo, settingsSvc,
@@ -105,6 +105,7 @@ func main() {
 		api.DELETE("/asset/:id", h.DeleteAsset)
 
 		api.POST("/asset/:id/files", h.UploadFile)
+		api.PUT("/asset/:id/files/:fid", h.UpdateFileRemark)
 		api.PUT("/asset/:id/files/:fid/primary", h.SetPrimary)
 		api.DELETE("/asset/:id/files/:fid", h.DeleteFile)
 	}

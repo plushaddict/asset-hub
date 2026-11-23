@@ -2,10 +2,7 @@ package repo
 
 import (
 	"database/sql"
-	"errors"
 	"time"
-
-	"assethub/internal/config"
 )
 
 const settingsTimeLayout = "2006-01-02 15:04:05"
@@ -78,32 +75,4 @@ ON CONFLICT(id) DO UPDATE SET
 		priv, row.SignedExpire, row.URLPrefix, row.BusinessToken, row.UpdateTime,
 	)
 	return err
-}
-
-// EnsureSeeded 在无行时用 yaml 的 oss 与 server.business_token 插入。已有行则不覆盖。
-func (r *SettingsRepo) EnsureSeeded(from *config.Config) error {
-	if from == nil {
-		return errors.New("config is nil")
-	}
-	_, err := r.Get()
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	expire := from.OSS.SignedExpire
-	if expire <= 0 {
-		expire = 3600
-	}
-	return r.Upsert(SettingsRow{
-		Endpoint:        from.OSS.Endpoint,
-		Bucket:          from.OSS.Bucket,
-		AccessKeyID:     from.OSS.AccessKeyID,
-		AccessKeySecret: from.OSS.AccessKeySecret,
-		Private:         from.OSS.Private,
-		SignedExpire:    expire,
-		URLPrefix:       from.OSS.URLPrefix,
-		BusinessToken:   from.Server.BusinessToken,
-	})
 }

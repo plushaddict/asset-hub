@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"assethub/internal/config"
 	"assethub/internal/repo"
 )
 
@@ -144,7 +143,7 @@ func TestViewCategoryCount(t *testing.T) {
 	if err := repo.Migrate(db); err != nil {
 		t.Fatal(err)
 	}
-	s := NewSettingsService(repo.NewSettingsRepo(db), nil, nil)
+	s := NewSettingsService(repo.NewSettingsRepo(db), nil)
 	v := s.View()
 	if v.CategoryCount != 0 || v.OssReady || v.SetupComplete || v.OssError == "" {
 		t.Fatalf("%+v", v)
@@ -160,12 +159,12 @@ func TestViewCategoryCount(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 
-	s2 := NewSettingsService(repo.NewSettingsRepo(db), stubCounter{n: 3}, nil)
+	s2 := NewSettingsService(repo.NewSettingsRepo(db), stubCounter{n: 3})
 	v2 := s2.View()
 	if v2.CategoryCount != 3 || v2.SetupComplete {
 		t.Fatalf("%+v", v2)
 	}
-	s3 := NewSettingsService(repo.NewSettingsRepo(db), stubCounter{n: 4, err: errCount}, nil)
+	s3 := NewSettingsService(repo.NewSettingsRepo(db), stubCounter{n: 4, err: errCount})
 	if s3.View().CategoryCount != 0 {
 		t.Fatal(s3.View())
 	}
@@ -209,23 +208,12 @@ func TestPlaceholderOSSNotReady(t *testing.T) {
 	if err := repo.Migrate(db); err != nil {
 		t.Fatal(err)
 	}
-	cfg := &config.Config{
-		OSS: config.OSSConfig{
-			Endpoint:        "oss-cn-beijing.aliyuncs.com",
-			Bucket:          "your-bucket-name",
-			AccessKeyID:     "LTAI5txxxxxxxx",
-			AccessKeySecret: "xxxxxxxxxxxxxxxx",
-			URLPrefix:       "https://your-bucket-name.oss-cn-beijing.aliyuncs.com/",
-			Private:         true,
-			SignedExpire:    3600,
-		},
-	}
-	s := NewSettingsService(repo.NewSettingsRepo(db), nil, cfg)
+	s := NewSettingsService(repo.NewSettingsRepo(db), nil)
 	st := s.SetupStatus()
 	if st.OssReady || st.SetupComplete {
-		t.Fatalf("placeholder seed must not be ready: %+v", st)
+		t.Fatalf("empty settings must not be ready: %+v", st)
 	}
-	if st.OssError == "" || !strings.Contains(st.OssError, "示例占位") {
+	if st.OssError == "" || !strings.Contains(st.OssError, "尚未配置") {
 		t.Fatalf("ossError=%q", st.OssError)
 	}
 }

@@ -14,7 +14,7 @@
 ```
 asset-hub/
 ├── main.go                     程序入口、路由、go:embed
-├── config.yaml                 首次部署种子（账号 / OSS / 端口）
+├── config.yaml                 进程配置（账号 / 端口 / 库路径）
 ├── internal/
 │   ├── config/config.go        配置加载与默认值
 │   ├── model/model.go          Asset / Category / Tag / AssetFile
@@ -26,7 +26,7 @@ asset-hub/
 
 ## 快速开始
 
-1. 修改 `config.yaml`：填 OSS 的 `endpoint / bucket / access_key_id / access_key_secret / url_prefix`，以及后台登录账号（可选 `business_token`）。
+1. （可选）修改 `config.yaml` 里的后台账号 / 密码 / session `secret` / 端口。
 2. 安装依赖并运行：
 
 ```bash
@@ -34,13 +34,14 @@ go mod tidy
 go run .
 ```
 
-3. 浏览器打开 http://127.0.0.1:8080 ，用配置里的账号密码登录。
+3. 浏览器打开 http://127.0.0.1:8080 ，用配置里的账号密码登录（默认见 `config.yaml`）。
 4. 打开 **设置**（`/settings`）：
-   - **OSS**：核对或保存连接（保存时会试连 Bucket）；密钥在接口响应中脱敏。
+   - **OSS**：填写并保存连接（保存时会试连 Bucket）；密钥在接口响应中脱敏。
    - **分类**：至少新建一个分类并填写 `ossPrefix`（如 `icon/`、`cover/`）。
-5. 首页未完成配置时会显示**引导条**（缺 OSS → 去 OSS 页；缺分类 → 去分类页）。配置就绪后：新建素材（必选分类，可选标签）→ 进详情上传各格式 → 复制链接或走业务 API。
+   - （可选）配置业务 API 的 `business_token`。
+5. 首页未完成配置时会显示**引导条**（缺 OSS → 去 OSS 页；缺分类 → 去分类页）。配置就绪后：新建素材（必选分类，可选标签，**可在同一弹窗顺带上传多种格式**）→ 亦可进详情继续添加/管理格式（格式文件可填「说明」便于区分类型）→ 复制链接或走业务 API。
 
-> 首次启动：若库中尚无 `system_settings` 行，会用 yaml 里的 `oss` 与 `server.business_token` 写入种子；之后以页面设置为准，改 yaml 不会自动覆盖已有库配置。启动日志会打印 `ossReady=`（仅表示 OSS 客户端构造成功，**不**等价于 Bucket 试连通过）。
+> OSS / 业务 token **只**存在库中，由设置页维护，不写进 yaml。空库启动时 OSS 未就绪，须先在页面保存配置。
 
 ## 编译打包（跨平台）
 
@@ -64,11 +65,21 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o assethub.exe .
 
 镜像仓库：`blackcatzoo/assethub`（Docker Hub）。页面打进二进制（`ASSETHUB_EMBED_STATIC=1`）；SQLite 默认写在卷 `/data/assethub.db`，**镜像内不含业务库**，新卷即空库。
 
+**完整部署教程（拉取运行 / Compose / 自定义配置 / 备份升级 / 反代 / 发版）：见 [deploy/DOCKER.md](deploy/DOCKER.md)。**
+
 本地构建并启动：
 
 ```bash
 docker compose up --build -d
-# 浏览器 http://127.0.0.1:8080  默认账号见 config.docker.yaml / 挂载的 config.yaml
+# 浏览器 http://127.0.0.1:8080  默认 admin / 123456；OSS 等登录后在设置页配置
+```
+
+拉取已发布镜像：
+
+```bash
+docker pull blackcatzoo/assethub:latest
+docker run -d --name assethub --restart unless-stopped \
+  -p 8080:8080 -v assethub-data:/data blackcatzoo/assethub:latest
 ```
 
 清空数据库（删命名卷后重启即空库）：
@@ -78,41 +89,11 @@ docker compose down -v
 docker compose up -d
 ```
 
-可选：挂载宿主机配置覆盖容器内默认配置（在 `docker-compose.yml` 取消注释）：
-
-```yaml
-volumes:
-  - assethub-data:/data
-  - ./config.yaml:/app/config.yaml:ro
-```
-
-### 发布到 Docker Hub（与 TabLink 相同流程）
-
-仓库需配置 GitHub Actions Secrets：
-
-| Secret | 说明 |
-| --- | --- |
-| `DOCKERHUB_USERNAME` | 如 `blackcatzoo` |
-| `DOCKERHUB_TOKEN` | Docker Hub Access Token |
-
-推送 `v*` tag 触发 `.github/workflows/docker-publish.yml`，构建 `linux/amd64` 并推送：
-
-- `blackcatzoo/assethub:<version>`（去掉 `v` 前缀，如 `1.0.0`）
-- `blackcatzoo/assethub:latest`
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-拉取运行：
-
-```bash
-docker pull blackcatzoo/assethub:latest
-docker run -d --name assethub -p 8080:8080 -v assethub-data:/data blackcatzoo/assethub:latest
-```
+发布到 Docker Hub：仓库配置 Secrets `DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN` 后，推送 `v*` tag 即可（详见教程第九节）。
 
 ## 配置说明（config.yaml）
+
+yaml **仅**进程级项（登录账号、端口、库路径）。OSS / 业务 token 在设置页配置。
 
 ```yaml
 server:
@@ -121,22 +102,12 @@ server:
   password: "123456"
   secret: "session 加密密钥，务必改成随机字符串"
   session_max_age: 86400
-  business_token: ""        # 业务查询 token；空则不校验。也可在设置页维护
 
 database:
   path: "assethub.db"
-
-oss:
-  endpoint: "oss-cn-beijing.aliyuncs.com"   # 不要带 https://
-  bucket: "your-bucket"
-  access_key_id: "..."
-  access_key_secret: "..."
-  private: true             # true=私有读，返回带时效签名 URL；false=公共读
-  signed_expire: 3600
-  url_prefix: "https://your-bucket.oss-cn-beijing.aliyuncs.com/"
 ```
 
-**已废弃**：`path_rule` / 系统级 `icon_prefix`、`cover_prefix`。对象路径前缀仅在**分类**的 `ossPrefix` 上配置；旧 yaml 若仍含 `path_rule` 会被忽略。
+**已废弃**：yaml 中的 `oss`、`business_token`、`path_rule` / 系统级前缀。对象路径前缀仅在**分类**的 `ossPrefix` 上配置。
 
 ## OSS 对象命名规则
 
@@ -179,7 +150,8 @@ oss:
 | GET | `/api/asset/:id` | 素材详情 + `files` + `tags` |
 | PUT | `/api/asset/:id` | 修改 `{assetName, categoryId, remark, sort}`；若带 `tagIds` 或 `tagNames` 则**全量替换**标签（空数组即清空） |
 | DELETE | `/api/asset/:id` | 删除素材（删 OSS 对象 + 逻辑删库） |
-| POST | `/api/asset/:id/files` | 上传，`multipart/form-data`，字段 `file` |
+| POST | `/api/asset/:id/files` | 上传，`multipart/form-data`，字段 `file`；可选 `remark`（说明，≤200 字） |
+| PUT | `/api/asset/:id/files/:fid` | 更新 `{ remark }`（说明，≤200 字） |
 | PUT | `/api/asset/:id/files/:fid/primary` | 设为主图 |
 | DELETE | `/api/asset/:id/files/:fid` | 删除单个格式文件 |
 

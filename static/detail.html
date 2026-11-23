@@ -90,6 +90,7 @@
             <th class="px-3 py-2 text-left w-36">文件名</th>
             <th class="px-3 py-2 text-left w-24">尺寸</th>
             <th class="px-3 py-2 text-left w-20">大小</th>
+            <th class="px-3 py-2 text-left w-36">说明</th>
             <th class="px-3 py-2 text-left">访问链接</th>
             <th class="px-3 py-2 text-right w-44">操作</th>
           </tr>
@@ -110,6 +111,13 @@
               </td>
               <td class="px-3 py-2 text-slate-500 text-xs" x-text="f.width?f.width+'×'+f.height:'—'"></td>
               <td class="px-3 py-2 text-slate-500 text-xs" x-text="fmtSize(f.fileSize)"></td>
+              <td class="px-3 py-2">
+                <input class="w-full min-w-[8rem] px-2 py-1 border rounded text-xs"
+                       :placeholder="'添加说明'"
+                       x-model="f.remark"
+                       @blur="saveFileRemark(f)"
+                       @keydown.enter.prevent="$event.target.blur()">
+              </td>
               <td class="px-3 py-2">
                 <div class="flex items-center gap-2">
                   <input class="flex-1 min-w-0 px-2 py-1 border rounded text-[11px] text-slate-600 bg-slate-50" :value="f.url" readonly @focus="$event.target.select()">
@@ -150,6 +158,9 @@
         <div class="text-[11px] text-slate-400 mt-1" x-show="!file">支持 png / jpg / jpeg / svg / webp / ico / gif，≤20MB</div>
         <input type="file" class="hidden" x-ref="fileInput" accept=".png,.jpg,.jpeg,.svg,.webp,.ico,.gif" @change="pick($event)">
       </div>
+      <label class="block text-xs text-slate-500 mb-1 mt-3">说明（可选）</label>
+      <input class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="如：彩色、白底、小尺寸"
+             x-model="uploadRemark" maxlength="200">
       <div class="text-red-500 text-xs min-h-4 mt-2" x-text="msg"></div>
       <div x-show="uploadOssHint" class="text-xs text-amber-800 mb-1">
         <button type="button" class="underline font-medium" @click="location.href='/settings?tab=oss'">前往设置配置 OSS</button>
@@ -219,7 +230,7 @@ function app(){return{
   categories:[], tags:[],
   status:{ossReady:false,ossError:'',categoryCount:0,setupComplete:false},
   statusLoaded:false,
-  showUpload:false, file:null, uploading:false, uploadOssHint:false,
+  showUpload:false, file:null, uploading:false, uploadOssHint:false, uploadRemark:'',
   showEdit:false, tagInput:'',
   editForm:{assetName:'',categoryId:0,tagIds:[],tagNames:[],remark:'',sort:0},
   msg:'',
@@ -279,6 +290,7 @@ function app(){return{
 
   async openUpload(){
     this.file=null
+    this.uploadRemark=''
     this.msg=''
     this.uploadOssHint=false
     this.showUpload=true
@@ -302,11 +314,12 @@ function app(){return{
     this.msg=''
     this.uploadOssHint=false
     const fd=new FormData(); fd.append('file',this.file)
+    fd.append('remark',(this.uploadRemark||'').trim())
     try{
       const res=await fetch('/api/asset/'+this.assetId+'/files',{method:'POST',body:fd})
       if(res.status===401){location.href='/login';this.uploading=false;return}
       const d=await res.json()
-      if(d.code===0){this.showUpload=false;await this.loadAsset()}
+      if(d.code===0){this.uploadRemark='';this.showUpload=false;await this.loadAsset()}
       else{
         this.msg=d.msg||'上传失败'
         this.uploadOssHint=this.looksLikeOss(d.msg)||(this.statusLoaded&&!this.status.ossReady)
@@ -344,6 +357,27 @@ function app(){return{
       if(d.code===0) this.loadAsset(); else alert(d.msg||'删除失败')
     }catch(e){
       if(!e.unauthorized) alert('请求失败：'+e.message)
+    }
+  },
+
+  async saveFileRemark(f){
+    const remark=(f.remark||'').trim()
+    if(remark.length>200){this.toast('说明不能超过 200 字');return}
+    try{
+      const d=await this.request('/api/asset/'+this.assetId+'/files/'+f.id,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({remark})
+      })
+      if(d.code===0){
+        if(d.data) f.remark=d.data.remark||''
+        else f.remark=remark
+      }else{
+        this.toast(d.msg||'保存说明失败')
+        await this.loadAsset()
+      }
+    }catch(e){
+      if(!e.unauthorized) this.toast('保存说明失败：'+e.message)
     }
   },
 

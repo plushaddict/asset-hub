@@ -411,7 +411,26 @@ func (h *Handler) UploadFile(c *gin.Context) {
 		fail(c, "请选择要上传的文件")
 		return
 	}
-	f, err := h.assetSvc.UploadFile(id, header)
+	remark := c.PostForm("remark")
+	f, err := h.assetSvc.UploadFile(id, header, remark)
+	if err != nil {
+		fail(c, err.Error())
+		return
+	}
+	ok(c, f)
+}
+
+func (h *Handler) UpdateFileRemark(c *gin.Context) {
+	assetID := parseInt64(c.Param("id"), 0)
+	fileID := parseInt64(c.Param("fid"), 0)
+	var body struct {
+		Remark string `json:"remark"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, "参数错误")
+		return
+	}
+	f, err := h.assetSvc.UpdateFileRemark(assetID, fileID, body.Remark)
 	if err != nil {
 		fail(c, err.Error())
 		return
@@ -479,6 +498,15 @@ func (h *Handler) BusinessAsset(c *gin.Context) {
 	if a.Tags == nil {
 		a.Tags = []model.Tag{}
 	}
+	fileList := make([]gin.H, 0, len(files))
+	for _, f := range files {
+		fileList = append(fileList, gin.H{
+			"id": f.ID, "assetId": f.AssetID, "fileName": f.FileName, "suffix": f.Suffix,
+			"fileSize": f.FileSize, "width": f.Width, "height": f.Height,
+			"objectKey": f.ObjectKey, "url": f.URL, "isPrimary": f.IsPrimary,
+			"createTime": f.CreateTime,
+		})
+	}
 	ok(c, gin.H{
 		"assetId":      a.ID,
 		"assetName":    a.AssetName,
@@ -486,6 +514,6 @@ func (h *Handler) BusinessAsset(c *gin.Context) {
 		"categoryName": a.CategoryName,
 		"tags":         a.Tags,
 		"remark":       a.Remark,
-		"fileList":     files,
+		"fileList":     fileList,
 	})
 }
