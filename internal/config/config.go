@@ -34,15 +34,16 @@ type OSSConfig struct {
 	URLPrefix       string
 }
 
-// Load 读取配置文件并补齐默认值
-func Load(path string) (*Config, error) {
+// Load 读取配置文件、补齐默认值，并用非空环境变量覆盖登录相关字段。
+// 第二个返回值为被覆盖的字段名（username / password / secret）。
+func Load(path string) (*Config, []string, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var c Config
 	if err := yaml.Unmarshal(b, &c); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if c.Server.Port == 0 {
 		c.Server.Port = 8080
@@ -56,5 +57,23 @@ func Load(path string) (*Config, error) {
 	if c.Database.Path == "" {
 		c.Database.Path = "assethub.db"
 	}
-	return &c, nil
+	overridden := applyEnvOverrides(&c)
+	return &c, overridden, nil
+}
+
+func applyEnvOverrides(c *Config) []string {
+	var overridden []string
+	if v := os.Getenv("ASSETHUB_USERNAME"); v != "" {
+		c.Server.Username = v
+		overridden = append(overridden, "username")
+	}
+	if v := os.Getenv("ASSETHUB_PASSWORD"); v != "" {
+		c.Server.Password = v
+		overridden = append(overridden, "password")
+	}
+	if v := os.Getenv("ASSETHUB_SECRET"); v != "" {
+		c.Server.Secret = v
+		overridden = append(overridden, "secret")
+	}
+	return overridden
 }

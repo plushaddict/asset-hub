@@ -2,15 +2,20 @@
 # 复制为项目目录下的 docker-compose.yml 后导入即可
 services:
   assethub:
-    image: blackcatzoo/assethub:latest
+    image: plushaddict/assethub:latest
     # 每次 compose up / 项目重建前拉取该 tag 的最新 digest
     pull_policy: always
     ports:
       - "8080:8080"
     volumes:
       - assethub-data:/data
-      # 可选：自定义登录账号
-      # - ./config.yaml:/app/config.yaml:ro
+      # 可选：挂载 config.docker.yaml 覆盖登录
+      # - ./config.docker.yaml:/app/config.yaml:ro
+    # 可选：覆盖登录（优先于挂载的 config.yaml；SECRET 非必须，公网再设）
+    # environment:
+    #   ASSETHUB_USERNAME: admin
+    #   ASSETHUB_PASSWORD: "改成强密码"
+    #   # ASSETHUB_SECRET: "改成至少32位随机字符串"
     restart: unless-stopped
 
 volumes:

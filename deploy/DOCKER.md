@@ -22,10 +22,11 @@
 
 | 项 | 说明 |
 | --- | --- |
-| 镜像 | `blackcatzoo/assethub`（Docker Hub） |
+| 源码 | [github.com/plushaddict/asset-hub](https://github.com/plushaddict/asset-hub) |
+| 镜像 | `plushaddict/assethub`（[Docker Hub](https://hub.docker.com/r/plushaddict/assethub)） |
 | 架构 | `linux/amd64` |
 | 数据 | SQLite：`/data/assethub.db`（**镜像内无业务库**，新挂载即空库） |
-| 默认账号 | `admin` / `123456`（可改，见第 5 节） |
+| 默认账号 | `admin` / `123456`；可用 `-e ASSETHUB_*` 覆盖（见第 5 节） |
 
 OSS、业务 token、分类等：**登录后在设置页配置**，部署时不必挂 `config.yaml`。
 
@@ -42,15 +43,19 @@ OSS、业务 token、分类等：**登录后在设置页配置**，部署时不�
 ## 2. 最快启动（docker run）
 
 ```bash
-docker pull blackcatzoo/assethub:latest
+docker pull plushaddict/assethub:latest
 
 docker run -d \
   --name assethub \
   --restart unless-stopped \
   -p 8080:8080 \
   -v assethub-data:/data \
-  blackcatzoo/assethub:latest
+  -e ASSETHUB_USERNAME=admin \
+  -e ASSETHUB_PASSWORD='改成强密码' \
+  plushaddict/assethub:latest
 ```
+
+上面 `-e` 可整段省略（仍为 `admin` / `123456`）。`ASSETHUB_SECRET` 非必须，公网/多实例再设，见第 5 节。
 
 打开 `http://<服务器IP>:8080`，用默认账号登录，再进设置页配 OSS / 分类。
 
@@ -65,18 +70,24 @@ docker stop assethub && docker rm assethub   # 删容器不删卷；数据仍在
 
 ### 3.1 命名卷（默认，推荐）
 
-在任意目录写 `docker-compose.yml`（群晖可直接用仓库内 [`deploy/docker-compose.synology.yml`](docker-compose.synology.yml)）：
+在任意目录写 `docker-compose.yml`（群晖可直接用仓库内 [`docker-compose.synology.yml`](docker-compose.synology.yml)）：
 
 ```yaml
 services:
   assethub:
-    image: blackcatzoo/assethub:latest
+    image: plushaddict/assethub:latest
     # 每次 up / 群晖「构建」前拉取该 tag 最新 digest（本地有 latest 也不跳过）
     pull_policy: always
     ports:
       - "8080:8080"
     volumes:
       - assethub-data:/data
+    # 可选：覆盖登录（等价于 docker run -e；整段 environment 可删，则仍为 admin / 123456）
+    environment:
+      ASSETHUB_USERNAME: admin
+      ASSETHUB_PASSWORD: "改成强密码"
+      # ASSETHUB_SECRET 非必须，见第 5 节「何时设 SECRET」
+      # ASSETHUB_SECRET: "改成至少32位随机字符串"
     restart: unless-stopped
 
 volumes:
@@ -98,7 +109,7 @@ docker compose up -d
 ```yaml
 services:
   assethub:
-    image: blackcatzoo/assethub:latest
+    image: plushaddict/assethub:latest
     pull_policy: always
     ports:
       - "8080:8080"
@@ -106,6 +117,10 @@ services:
       # 宿主机目录 : 容器内 /data
       - /opt/assethub/data:/data
       # 或相对路径：- ./data:/data
+    environment:
+      ASSETHUB_USERNAME: admin
+      ASSETHUB_PASSWORD: "改成强密码"
+      # ASSETHUB_SECRET 非必须，见第 5 节
     restart: unless-stopped
 ```
 
@@ -127,11 +142,12 @@ mkdir -p /opt/assethub/data
 ### 3.3 从源码本地构建
 
 ```bash
+git clone https://github.com/plushaddict/asset-hub.git
 cd asset-hub
 docker compose up --build -d
 ```
 
-使用仓库内 `docker-compose.yml` + `deploy/Dockerfile`。
+使用仓库根目录 `docker-compose.yml` + `deploy/Dockerfile`。
 
 ---
 
@@ -141,7 +157,7 @@ docker compose up --build -d
 2. **设置 → OSS**：填 endpoint / bucket / AK / SK / url_prefix 并保存（会试连）  
 3. **设置 → 分类**：至少建一个，填 `ossPrefix`（如 `icon/`、`cover/`）  
 4. （可选）设置业务 API 的 `business_token`  
-5. 首页引导条消失后即可建素材、上传文件  
+5. 首页引导条消失后即可建素材：同一弹窗可顺带上传多种格式；详情页也可本地上传或填远程 `http(s)` URL 由服务端拉取  
 
 业务查询示例：
 
@@ -150,16 +166,77 @@ GET /api/business/asset?assetName=book_cover_001
 Header: X-Asset-Token: <business_token>
 ```
 
-> OSS / 业务 token **只**走设置页；登录账号与 session `secret` 只来自 yaml，页面改不了。
+> OSS / 业务 token **只**走设置页；登录账号与 session `secret` 可用环境变量或 yaml 配置，页面改不了。
 
 ---
 
-## 5. 改登录密码（可选）
+## 5. 改登录账号（可选）
 
-仅当需要改**用户名 / 密码 / session secret** 时挂载配置。日常部署可跳过。  
-**不要**在 yaml 里写 OSS / business_token。
+日常部署可不改默认账号。需要改登录时，**优先用环境变量**（不必挂自定义 yaml）；与 yaml 同时存在时，**非空环境变量优先**。
 
-`config.yaml` 示例（`database.path` 必须为 `/data/assethub.db`）：
+| 变量 | 覆盖 | 是否必须 |
+| --- | --- | --- |
+| `ASSETHUB_USERNAME` | `server.username` | 否；不设则用 yaml / 默认 `admin` |
+| `ASSETHUB_PASSWORD` | `server.password` | 否；生产建议设强密码 |
+| `ASSETHUB_SECRET` | `server.secret`（登录 Cookie 签名密钥） | **否**；见下方「何时设 SECRET」 |
+
+空字符串与未设置同等，均不覆盖镜像内默认值。启动日志会列出被覆盖的键名，**不会**打印密码或 secret 明文。  
+**注意：** 密码会出现在 `docker inspect` 与进程环境变量中；勿将含真实密钥的 compose 提交到公开仓库。
+
+### 何时设 `ASSETHUB_SECRET`
+
+`secret` 只用于**签名管理端登录 Cookie**，与登录密码无关，也**不是**改密码的必选项。
+
+| 场景 | 建议 |
+| --- | --- |
+| 本机 / 内网试跑，只改密码 | **可不设**；继续用镜像内默认 secret 即可 |
+| 公网或不可信网络暴露 | **建议设**一串至少 32 位随机字符，避免他人用默认 secret 伪造 Cookie |
+| 多副本 / 滚动重启要保持已登录会话 | 各实例设**相同** `ASSETHUB_SECRET`；改 secret 会使已有登录全部失效，需重新登录 |
+
+日常只改密码时，设 `ASSETHUB_PASSWORD`（可选再设 `ASSETHUB_USERNAME`）就够了。
+
+### 5.1 docker run（推荐）
+
+只改密码（最常见）：
+
+```bash
+docker run -d \
+  --name assethub \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -v assethub-data:/data \
+  -e ASSETHUB_USERNAME=admin \
+  -e ASSETHUB_PASSWORD='你的强密码' \
+  plushaddict/assethub:latest
+```
+
+公网部署再追加一行（可选）：
+
+```bash
+  -e ASSETHUB_SECRET='至少32位随机字符串' \
+```
+
+也可只设密码：`-e ASSETHUB_PASSWORD='你的强密码'`。
+
+### 5.2 Compose
+
+第 3 节示例已含 `environment`。仓库内 `docker-compose.yml` / `deploy/docker-compose.synology.yml` 也有注释块，取消注释即可。只改密码时不必写 `ASSETHUB_SECRET`：
+
+```yaml
+    volumes:
+      - assethub-data:/data
+    environment:
+      ASSETHUB_USERNAME: admin
+      ASSETHUB_PASSWORD: "改成强密码"
+      # 公网建议取消下一行注释：
+      # ASSETHUB_SECRET: "改成至少32位随机字符串"
+```
+
+### 5.3 挂载 config.yaml（备选）
+
+不想用环境变量时，可挂载自定义 `config.yaml`。**不要**在 yaml 里写 OSS / business_token。
+
+`database.path` 必须为 `/data/assethub.db`：
 
 ```yaml
 server:
@@ -180,16 +257,10 @@ docker run -d \
   -p 8080:8080 \
   -v /opt/assethub/data:/data \
   -v /opt/assethub/config.yaml:/app/config.yaml:ro \
-  blackcatzoo/assethub:latest
+  plushaddict/assethub:latest
 ```
 
-Compose：
-
-```yaml
-    volumes:
-      - /opt/assethub/data:/data
-      - /opt/assethub/config.yaml:/app/config.yaml:ro
-```
+若同时设置 `-e ASSETHUB_*` 与挂载 yaml，以**环境变量为准**。
 
 ---
 
@@ -238,19 +309,23 @@ docker compose up -d
 
 `docker run` 部署：
 
+- 卷路径：继续用升级前的同一挂载（命名卷 `assethub-data` 或你的自定义宿主机目录）。
+- 若曾用 `-e ASSETHUB_*` 改登录，在下方 `docker run` 中**补上相同 `-e` 行**（见第 5 节）。
+- 若曾挂载自定义 `config.yaml`，补上 `-v /path/config.yaml:/app/config.yaml:ro`。
+
 ```bash
-docker pull blackcatzoo/assethub:latest
+docker pull plushaddict/assethub:latest
 
 docker stop assethub && docker rm assethub
 docker run -d \
   --name assethub \
   --restart unless-stopped \
   -p 8080:8080 \
-  -v assethub-data:/data \          # 或继续用你的自定义目录
-  blackcatzoo/assethub:latest
+  -v assethub-data:/data \
+  plushaddict/assethub:latest
 ```
 
-务必继续挂载**同一数据路径**；若曾挂 `config.yaml`，升级时一并带上。钉死版本时把 `image` 改成如 `blackcatzoo/assethub:0.0.3` 再重建。
+需要钉死版本时，把最后一行镜像改成如 `plushaddict/assethub:X.Y.Z` 再执行。
 
 ---
 
@@ -279,14 +354,47 @@ server {
 
 ---
 
-## 9. 常见问题
+## 9. 发版到 Docker Hub（维护者）
+
+推送符合 `v*` 的 git tag 后，GitHub Actions（[`.github/workflows/docker-publish.yml`](../.github/workflows/docker-publish.yml)）会构建并推送：
+
+| Hub tag | 来源 |
+| --- | --- |
+| `X.Y.Z` | git tag `vX.Y.Z` |
+| `latest` | 同一次正式发版一并打上 |
+
+**仓库 Secrets（Settings → Secrets and variables → Actions）：**
+
+| Name | 说明 |
+| --- | --- |
+| `DOCKERHUB_USERNAME` | Docker Hub 用户名（镜像为 `{USERNAME}/assethub`，当前应为 `plushaddict`） |
+| `DOCKERHUB_TOKEN` | Docker Hub Access Token |
+
+**发版命令示例：**
+
+```bash
+git checkout main
+git pull
+# 确认待发布提交已在 main
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+在 Actions 中查看 `docker-publish` 是否成功。构建失败时保留该 tag 作记录，修完后打**新** semver tag 再推，不要默认 force 挪已失败的正式版 tag。
+
+镜像构建参数会注入页脚版本号（`VERSION=${{ github.ref_name }}`）。
+
+---
+
+## 10. 常见问题
 
 | 现象 | 处理 |
 | --- | --- |
 | 页面打不开 | `docker logs assethub`；查端口与安全组 |
 | `volumes.assethub-data:` 要不要填？ | 不用；空着即自动命名卷。要自定义路径见 **3.2** |
-| 群晖「构建」仍是旧版本 | Compose 缺 `pull_policy: always`；改用 **3.1** / `deploy/docker-compose.synology.yml` 后重建 |
-| 想改默认登录密码 | 挂载自定义 config（第 5 节）并重建容器 |
+| 群晖「构建」仍是旧版本 | Compose 缺 `pull_policy: always`；改用 **3.1** / `docker-compose.synology.yml` 后重建 |
+| 想改默认登录密码 | 优先 `-e ASSETHUB_PASSWORD` 等（第 5 节）；或挂载自定义 config（备选） |
 | 上传 / 保存 OSS 失败 | 查 AK；保存设置需 `oss:GetBucketInfo` |
 | 换机 / 升级后数据没了 | 未挂同一命名卷或同一宿主机目录 |
 | 架构不兼容 | 官方镜像为 `linux/amd64`；ARM 需模拟或自建多架构 |
+| Actions 发版失败 | 查 Secrets；Login 绿、Build 红 → 看构建日志。失败 tag 勿 force 重推，改打下一版本 |

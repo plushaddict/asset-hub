@@ -2,7 +2,9 @@
 
 轻量图片素材管理系统：按分类与标签组织素材，上传到阿里云 OSS，并生成可复制、可管理的公网访问链接，方便在其它应用和文档中直接引用图片。
 
-按**分类**组织素材（每类自带 OSS 对象前缀），支持**标签**筛选；一个素材可挂多种格式文件（png / svg / webp / ico …）。
+源码：[github.com/plushaddict/asset-hub](https://github.com/plushaddict/asset-hub) · 镜像：[`plushaddict/assethub`](https://hub.docker.com/r/plushaddict/assethub)
+
+按**分类**组织素材（每类自带 OSS 对象前缀），支持**标签**筛选；一个素材可挂多种格式文件（png / svg / webp / ico …）。列表支持按创建/更新时间、名称、排序字段排序；格式文件可本地上传或填远程 URL 由服务端拉取。
 
 ## 为什么需要 AssetHub
 
@@ -71,8 +73,8 @@ go run .
 # 当前平台
 go build -o assethub .
 
-# 写入版本号（发布时用 git tag，如 v0.0.3）
-go build -ldflags="-X assethub/internal/version.Version=v0.0.3" -o assethub .
+# 写入版本号（发布时用 git tag）
+go build -ldflags="-X assethub/internal/version.Version=$(git describe --tags --always)" -o assethub .
 
 # macOS arm64（M 系列）
 GOOS=darwin GOARCH=arm64 go build -o assethub-darwin-arm64 .
@@ -88,9 +90,9 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o assethub.exe .
 
 ## Docker
 
-镜像仓库：`blackcatzoo/assethub`（Docker Hub）。页面打进二进制（`ASSETHUB_EMBED_STATIC=1`）；SQLite 默认写在卷 `/data/assethub.db`，**镜像内不含业务库**，新卷即空库。
+镜像仓库：`plushaddict/assethub`（Docker Hub）。页面打进二进制（`ASSETHUB_EMBED_STATIC=1`）；SQLite 默认写在卷 `/data/assethub.db`，**镜像内不含业务库**，新卷即空库。
 
-**完整部署教程（拉取运行 / Compose / 自定义配置 / 备份升级 / 反代 / 发版）：见 [deploy/DOCKER.md](deploy/DOCKER.md)。**
+**完整部署教程（拉取运行 / Compose / 群晖 / 自定义配置 / 备份升级 / 反代 / 发版）：见 [deploy/DOCKER.md](deploy/DOCKER.md)。**
 
 本地构建并启动：
 
@@ -102,10 +104,12 @@ docker compose up --build -d
 拉取已发布镜像：
 
 ```bash
-docker pull blackcatzoo/assethub:latest
+docker pull plushaddict/assethub:latest
 docker run -d --name assethub --restart unless-stopped \
-  -p 8080:8080 -v assethub-data:/data blackcatzoo/assethub:latest
+  -p 8080:8080 -v assethub-data:/data plushaddict/assethub:latest
 ```
+
+群晖 / 仅拉取镜像：用 [`deploy/docker-compose.synology.yml`](deploy/docker-compose.synology.yml)（含 `pull_policy: always`），勿直接用根目录带 `build:` 的 `docker-compose.yml`。
 
 清空数据库（删命名卷后重启即空库）：
 
@@ -114,7 +118,7 @@ docker compose down -v
 docker compose up -d
 ```
 
-发布到 Docker Hub：仓库配置 Secrets `DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN` 后，推送 `v*` tag 即可（详见教程第九节）。
+发布到 Docker Hub：仓库配置 Secrets `DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN` 后，推送 `v*` tag 即可（详见 [deploy/DOCKER.md](deploy/DOCKER.md) 第九节）。
 
 ## 配置说明（config.yaml）
 
@@ -134,6 +138,17 @@ database:
 
 **已废弃**：yaml 中的 `oss`、`business_token`、`path_rule` / 系统级前缀。对象路径前缀仅在**分类**的 `ossPrefix` 上配置。
 
+### 环境变量覆盖（可选）
+
+Docker 或其它部署可用环境变量覆盖登录相关项（**非空才生效**，优先于 yaml）：
+
+| 变量 | 覆盖 | 说明 |
+| --- | --- | --- |
+| `ASSETHUB_USERNAME` | `server.username` | 可选 |
+| `ASSETHUB_PASSWORD` | `server.password` | 可选；生产建议设 |
+| `ASSETHUB_SECRET` | `server.secret`（Cookie 签名） | **非必须**；公网/多实例再设，见 [deploy/DOCKER.md](deploy/DOCKER.md) 第 5 节 |
+
+本地 `go run` 同样生效。只改密码：`docker run -e ASSETHUB_PASSWORD='强密码' ...`。
 ## OSS 对象命名规则
 
 ```

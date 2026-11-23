@@ -1,6 +1,6 @@
 services:
   assethub:
-    image: blackcatzoo/assethub:latest
+    image: plushaddict/assethub:latest
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -9,8 +9,13 @@ services:
     volumes:
       # SQLite 持久化；新卷为空库。要清空：docker compose down -v
       - assethub-data:/data
-      # 可选：用宿主机配置覆盖（账号 / 种子 OSS）
-      # - ./config.yaml:/app/config.yaml:ro
+      # 可选：用宿主机 config.yaml 覆盖登录（见 config.docker.yaml）
+      # - ./config.docker.yaml:/app/config.yaml:ro
+    # 可选：覆盖登录（优先于挂载的 config.yaml；SECRET 非必须，公网再设）
+    # environment:
+    #   ASSETHUB_USERNAME: admin
+    #   ASSETHUB_PASSWORD: "改成强密码"
+    #   # ASSETHUB_SECRET: "改成至少32位随机字符串"
     restart: unless-stopped
 
 volumes:

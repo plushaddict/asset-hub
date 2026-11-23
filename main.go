@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -22,9 +23,12 @@ import (
 var staticFS embed.FS
 
 func main() {
-	cfg, err := config.Load("config.yaml")
+	cfg, envOverrides, err := config.Load("config.yaml")
 	if err != nil {
 		log.Fatalf("读取配置失败（请确认当前目录有 config.yaml）：%v", err)
+	}
+	if len(envOverrides) > 0 {
+		log.Printf("配置：已从环境变量覆盖 %s", strings.Join(envOverrides, ","))
 	}
 
 	db, err := repo.Open(cfg.Database.Path)

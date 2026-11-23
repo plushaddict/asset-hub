@@ -1,6 +1,7 @@
 # 容器默认配置：数据库落在数据卷 /data（镜像内不含业务库，新卷即空库）
 # OSS / 业务 token 登录后在设置页配置；无需挂载本文件也可部署。
-# 若要改默认登录账号或 secret，可挂载宿主机 config.yaml 覆盖。
+# 改登录：优先 -e / Compose environment（USERNAME、PASSWORD）；SECRET 非必须（公网再设）。
+# 或将本文件挂载为 /app/config.yaml:ro（环境变量非空时仍优先于本文件）。
 server:
   port: 8080
   username: admin
