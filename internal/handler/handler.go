@@ -330,8 +330,10 @@ func (h *Handler) AssetList(c *gin.Context) {
 	tagIDs := parseIDList(c.Query("tagIds"))
 	page := parseInt(c.Query("page"), 1)
 	size := parseInt(c.Query("size"), 12)
+	sortBy := c.Query("sortBy")
+	sortOrder := c.Query("sortOrder")
 
-	list, total, err := h.assetSvc.PageList(keyword, categoryID, tagIDs, page, size)
+	list, total, err := h.assetSvc.PageList(keyword, categoryID, tagIDs, page, size, sortBy, sortOrder)
 	if err != nil {
 		fail(c, err.Error())
 		return
@@ -407,13 +409,27 @@ func (h *Handler) DeleteAsset(c *gin.Context) {
 
 func (h *Handler) UploadFile(c *gin.Context) {
 	id := parseInt64(c.Param("id"), 0)
-	header, err := c.FormFile("file")
-	if err != nil {
-		fail(c, "请选择要上传的文件")
+	remark := c.PostForm("remark")
+	sourceURL := strings.TrimSpace(c.PostForm("sourceUrl"))
+	header, fileErr := c.FormFile("file")
+	hasFile := fileErr == nil && header != nil
+	if hasFile && sourceURL != "" {
+		fail(c, "请只选择本地文件或远程 URL 其一")
 		return
 	}
-	remark := c.PostForm("remark")
-	f, err := h.assetSvc.UploadFile(id, header, remark)
+	if !hasFile && sourceURL == "" {
+		fail(c, "请选择要上传的文件或填写远程 URL")
+		return
+	}
+	var (
+		f   *model.AssetFile
+		err error
+	)
+	if sourceURL != "" {
+		f, err = h.assetSvc.UploadFileFromURL(id, sourceURL, remark)
+	} else {
+		f, err = h.assetSvc.UploadFile(id, header, remark)
+	}
 	if err != nil {
 		fail(c, err.Error())
 		return

@@ -1,0 +1,17 @@
+# 群晖 Container Manager / 生产拉取镜像用（无 build）
+# 复制为项目目录下的 docker-compose.yml 后导入即可
+services:
+  assethub:
+    image: blackcatzoo/assethub:latest
+    # 每次 compose up / 项目重建前拉取该 tag 的最新 digest
+    pull_policy: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - assethub-data:/data
+      # 可选：自定义登录账号
+      # - ./config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+
+volumes:
+  assethub-data:

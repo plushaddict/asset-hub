@@ -49,16 +49,33 @@
     <div class="flex flex-wrap gap-2 items-center">
       <input class="flex-1 min-w-[220px] px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
              placeholder="搜索素材名称 / 备注" x-model="keyword" @keyup.enter="search()">
-      <select class="px-3 py-2 border rounded-lg text-sm bg-white" x-model.number="categoryId">
-        <option value="0">全部分类</option>
-        <template x-for="c in categories" :key="c.id">
-          <option :value="c.id" x-text="c.name"></option>
-        </template>
-      </select>
+      <div class="relative" @click.outside="categoryOpen=false">
+        <button type="button" @click="categoryOpen=!categoryOpen;tagFilterOpen=false"
+                class="inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm bg-white hover:bg-slate-50 text-left">
+          <span x-text="categoryLabel()"></span>
+          <svg class="w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform" :class="categoryOpen && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/>
+          </svg>
+        </button>
+        <div x-cloak x-show="categoryOpen"
+             class="absolute left-0 top-full mt-1 min-w-full whitespace-nowrap bg-white border rounded-lg shadow-lg z-20 py-1 max-h-52 overflow-auto">
+          <button type="button" class="block w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50"
+                  :class="categoryId===0 ? 'text-blue-600 bg-blue-50' : 'text-slate-700'"
+                  @click="pickCategory(0)">全部分类</button>
+          <template x-for="c in categories" :key="c.id">
+            <button type="button" class="block w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50"
+                    :class="categoryId===c.id ? 'text-blue-600 bg-blue-50' : 'text-slate-700'"
+                    @click="pickCategory(c.id)" x-text="c.name"></button>
+          </template>
+        </div>
+      </div>
       <div class="relative" @click.outside="tagFilterOpen=false">
-        <button type="button" @click="tagFilterOpen=!tagFilterOpen"
-                class="px-3 py-2 border rounded-lg text-sm bg-white hover:bg-slate-50 min-w-[120px] text-left">
+        <button type="button" @click="tagFilterOpen=!tagFilterOpen;categoryOpen=false"
+                class="inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm bg-white hover:bg-slate-50 text-left">
           <span x-text="filterTagIds.length ? ('标签（'+filterTagIds.length+'）') : '全部标签'"></span>
+          <svg class="w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform" :class="tagFilterOpen && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/>
+          </svg>
         </button>
         <div x-cloak x-show="tagFilterOpen" class="absolute left-0 mt-1 w-64 max-w-[80vw] bg-white border rounded-lg shadow-lg z-20 p-2">
           <div class="text-[11px] text-slate-400 px-1 pb-2">需同时包含所选标签</div>
@@ -77,6 +94,45 @@
       <button type="button" @click="reset()" class="border px-4 py-2 rounded-lg text-sm text-slate-500 hover:bg-slate-50">重置</button>
     </div>
     <p class="text-[11px] text-slate-400 mt-2">标签可多选，结果需同时包含所选标签。</p>
+  </div>
+
+  <div class="flex justify-end items-center gap-2 mb-3">
+    <div class="relative" @click.outside="sortByOpen=false">
+      <button type="button" @click="sortByOpen=!sortByOpen;sortOrderOpen=false"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm bg-white hover:bg-slate-50 text-left">
+        <span x-text="sortByLabel()"></span>
+        <svg class="w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform" :class="sortByOpen && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/>
+        </svg>
+      </button>
+      <div x-cloak x-show="sortByOpen"
+           class="absolute right-0 top-full mt-1 min-w-[7.5rem] whitespace-nowrap bg-white border rounded-lg shadow-lg z-20 py-1">
+        <template x-for="opt in sortByOptions" :key="opt.value">
+          <button type="button"
+                  class="block w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50"
+                  :class="sortBy===opt.value ? 'text-blue-600 bg-blue-50' : 'text-slate-700'"
+                  @click="pickSortBy(opt.value)" x-text="opt.label"></button>
+        </template>
+      </div>
+    </div>
+    <div class="relative" @click.outside="sortOrderOpen=false">
+      <button type="button" @click="sortOrderOpen=!sortOrderOpen;sortByOpen=false"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm bg-white hover:bg-slate-50 text-left">
+        <span x-text="sortOrder==='asc' ? '升序' : '降序'"></span>
+        <svg class="w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform" :class="sortOrderOpen && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/>
+        </svg>
+      </button>
+      <div x-cloak x-show="sortOrderOpen"
+           class="absolute right-0 top-full mt-1 min-w-full whitespace-nowrap bg-white border rounded-lg shadow-lg z-20 py-1">
+        <button type="button" class="block w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50"
+                :class="sortOrder==='desc' ? 'text-blue-600 bg-blue-50' : 'text-slate-700'"
+                @click="pickSortOrder('desc')">降序</button>
+        <button type="button" class="block w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50"
+                :class="sortOrder==='asc' ? 'text-blue-600 bg-blue-50' : 'text-slate-700'"
+                @click="pickSortOrder('asc')">升序</button>
+      </div>
+    </div>
   </div>
 
   <div x-show="loading" class="text-center text-slate-400 py-10 text-sm">加载中…</div>
@@ -196,11 +252,18 @@
         <input type="file" class="hidden" x-ref="createFileInput" multiple
                accept=".png,.jpg,.jpeg,.svg,.webp,.ico,.gif" @change="pickCreateFiles($event)">
       </div>
+      <div class="flex gap-2 mb-2">
+        <input class="flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="https://…/icon.ico"
+               x-model="createUrlInput" @keydown.enter.prevent="addCreateUrl()">
+        <button type="button" @click="addCreateUrl()"
+                class="shrink-0 border px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50">添加 URL</button>
+      </div>
       <ul x-show="createFiles.length" class="mb-3 space-y-1 max-h-28 overflow-y-auto">
-        <template x-for="(f, idx) in createFiles" :key="idx+'-'+f.file.name+'-'+f.file.size">
+        <template x-for="(f, idx) in createFiles" :key="idx+'-'+(f.type==='url' ? f.url : (f.file&&f.file.name)+'-'+(f.file&&f.file.size))">
           <li class="flex items-center justify-between gap-2 text-xs bg-slate-50 rounded-lg px-2 py-1.5 flex-wrap">
-            <span class="truncate text-slate-700 min-w-0" x-text="f.file.name"></span>
-            <span class="shrink-0 text-slate-400" x-text="fmtSize(f.file.size)"></span>
+            <span class="truncate text-slate-700 min-w-0" :title="f.type==='url' ? f.url : (f.file&&f.file.name)"
+                  x-text="f.type==='url' ? truncateUrl(f.url) : (f.file&&f.file.name)"></span>
+            <span class="shrink-0 text-slate-400" x-text="f.type==='url' ? 'URL' : fmtSize(f.file&&f.file.size)"></span>
             <input class="flex-1 min-w-[6rem] px-1.5 py-0.5 border rounded text-xs" placeholder="说明（可选）"
                    x-model="f.remark" @click.stop maxlength="200">
             <button type="button" class="shrink-0 text-slate-400 hover:text-red-500" @click.stop="removeCreateFile(idx)">移除</button>
@@ -228,13 +291,20 @@
 <script>
 function app(){return{
   list:[],total:0,page:1,size:12,keyword:'',categoryId:0,filterTagIds:[],loading:false,
-  categories:[],tags:[],tagFilterOpen:false,
+  sortBy:'createTime',sortOrder:'desc',sortByOpen:false,sortOrderOpen:false,
+  sortByOptions:[
+    {value:'createTime',label:'创建时间'},
+    {value:'updateTime',label:'修改时间'},
+    {value:'assetName',label:'名称'},
+    {value:'sort',label:'手动权重'}
+  ],
+  categories:[],tags:[],categoryOpen:false,tagFilterOpen:false,
   status:{ossReady:false,ossError:'',categoryCount:0,setupComplete:false},
   statusLoaded:false,metaLoaded:false,
   author:'blackcat',version:'v0.0.4',
   showCreate:false,msg:'',tagInput:'',
   form:{assetName:'',categoryId:0,tagIds:[],tagNames:[],remark:''},
-  createFiles:[], createAssetId:null, uploading:false, uploadOssHint:false,
+  createFiles:[], createUrlInput:'', createAssetId:null, uploading:false, uploadOssHint:false,
   createPhase:'', // '' | 'meta' | 'upload' | 'partial'
   allowedCreateSuffixes:['png','jpg','jpeg','svg','webp','ico','gif'],
   maxCreateFileSize:20*1024*1024,
@@ -299,7 +369,10 @@ function app(){return{
   async load(){
     this.loading=true
     try{
-      const q=new URLSearchParams({keyword:this.keyword,page:this.page,size:this.size})
+      const q=new URLSearchParams({
+        keyword:this.keyword,page:this.page,size:this.size,
+        sortBy:this.sortBy,sortOrder:this.sortOrder
+      })
       if(this.categoryId) q.set('categoryId',String(this.categoryId))
       if(this.filterTagIds.length) q.set('tagIds',this.filterTagIds.join(','))
       const d=await this.request('/api/asset/list?'+q)
@@ -311,8 +384,26 @@ function app(){return{
     this.loading=false
   },
 
-  search(){this.page=1;this.tagFilterOpen=false;this.load()},
-  reset(){this.keyword='';this.categoryId=0;this.filterTagIds=[];this.page=1;this.tagFilterOpen=false;this.load()},
+  categoryLabel(){
+    if(!this.categoryId) return '全部分类'
+    const hit=this.categories.find(c=>c.id===this.categoryId)
+    return hit?hit.name:'全部分类'
+  },
+  pickCategory(id){
+    this.categoryId=Number(id)||0;this.categoryOpen=false
+  },
+  sortByLabel(){
+    const hit=this.sortByOptions.find(o=>o.value===this.sortBy)
+    return hit?hit.label:'创建时间'
+  },
+  pickSortBy(v){
+    this.sortBy=v;this.sortByOpen=false;this.page=1;this.load()
+  },
+  pickSortOrder(v){
+    this.sortOrder=v;this.sortOrderOpen=false;this.page=1;this.load()
+  },
+  search(){this.page=1;this.categoryOpen=false;this.tagFilterOpen=false;this.sortByOpen=false;this.sortOrderOpen=false;this.load()},
+  reset(){this.keyword='';this.categoryId=0;this.filterTagIds=[];this.page=1;this.categoryOpen=false;this.tagFilterOpen=false;this.sortByOpen=false;this.sortOrderOpen=false;this.load()},
   prev(){if(this.page>1){this.page--;this.load()}},
   next(){if(this.page<this.totalPages()){this.page++;this.load()}},
 
@@ -334,6 +425,23 @@ function app(){return{
     return String(name).slice(i+1).toLowerCase()
   },
 
+  fileSuffixFromUrl(url){
+    try{
+      const u=new URL(url)
+      const base=u.pathname.split('/').pop()||''
+      const i=base.lastIndexOf('.')
+      if(i<0) return ''
+      return base.slice(i+1).toLowerCase()
+    }catch(e){return ''}
+  },
+
+  truncateUrl(url, max){
+    const s=String(url||'')
+    const lim=max==null?48:max
+    if(s.length<=lim) return s
+    return s.slice(0,lim-1)+'…'
+  },
+
   primaryCreateLabel(){
     if(this.uploading){
       if(this.createPhase==='meta') return '保存中…'
@@ -352,7 +460,20 @@ function app(){return{
     }
     const seen={}
     for(const item of files){
+      const type=item.type||'file'
+      if(type==='url'){
+        const suf=this.fileSuffixFromUrl(item.url||'')
+        if(suf){
+          if(this.allowedCreateSuffixes.indexOf(suf)<0){
+            return '不支持的格式：.'+suf+'（允许 png/jpg/jpeg/svg/webp/ico/gif）'
+          }
+          if(seen[suf]) return '同批次不能有重复后缀：.'+suf
+          seen[suf]=true
+        }
+        continue
+      }
       const f=item.file
+      if(!f) continue
       const suf=this.fileSuffix(f.name)
       if(!suf || this.allowedCreateSuffixes.indexOf(suf)<0){
         return '不支持的格式：'+(suf||'(无后缀)')+'（允许 png/jpg/jpeg/svg/webp/ico/gif）'
@@ -372,7 +493,17 @@ function app(){return{
     this.msg=''
     this.uploadOssHint=false
     // 追加；随后用 validateCreateFiles 在提交时拦截重复后缀
-    this.createFiles=this.createFiles.concat(incoming.map(file=>({file,remark:''})))
+    this.createFiles=this.createFiles.concat(incoming.map(file=>({type:'file',file,remark:''})))
+  },
+
+  addCreateUrl(){
+    const url=(this.createUrlInput||'').trim()
+    if(!url){this.msg='请填写远程 URL';return}
+    if(!/^https?:\/\//i.test(url)){this.msg='远程 URL 须以 http:// 或 https:// 开头';return}
+    this.msg=''
+    this.uploadOssHint=false
+    this.createFiles=this.createFiles.concat([{type:'url',url,remark:''}])
+    this.createUrlInput=''
   },
 
   removeCreateFile(idx){
@@ -393,6 +524,7 @@ function app(){return{
     const needRefresh=!!this.createAssetId
     this.showCreate=false
     this.createFiles=[]
+    this.createUrlInput=''
     this.createAssetId=null
     this.uploading=false
     this.uploadOssHint=false
@@ -410,6 +542,7 @@ function app(){return{
     this.tagInput=''
     this.msg=''
     this.createFiles=[]
+    this.createUrlInput=''
     this.createAssetId=null
     this.uploading=false
     this.uploadOssHint=false
@@ -446,10 +579,15 @@ function app(){return{
     const remaining=[]
     const notes=[]
     for(const item of this.createFiles){
-      const f=item.file
       const fd=new FormData()
-      fd.append('file', f)
       fd.append('remark', (item.remark||'').trim())
+      const type=item.type||'file'
+      const label=type==='url' ? (item.url||'URL') : (item.file&&item.file.name)||'文件'
+      if(type==='url'){
+        fd.append('sourceUrl', item.url)
+      }else{
+        fd.append('file', item.file)
+      }
       try{
         const res=await fetch('/api/asset/'+assetId+'/files',{method:'POST',body:fd})
         if(res.status===401){location.href='/login';return {unauthorized:true}}
@@ -459,15 +597,15 @@ function app(){return{
         }
         const m=d.msg||'上传失败'
         if(m.indexOf('已存在')>=0){
-          notes.push(f.name+'：已存在，跳过')
+          notes.push(label+'：已存在，跳过')
           continue
         }
         remaining.push(item)
-        notes.push(f.name+'：'+m)
+        notes.push(label+'：'+m)
         this.uploadOssHint=this.looksLikeOss(m)||(this.statusLoaded&&!this.status.ossReady)
       }catch(e){
         remaining.push(item)
-        notes.push(f.name+'：'+e.message)
+        notes.push(label+'：'+e.message)
       }
     }
     this.createFiles=remaining

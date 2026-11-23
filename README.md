@@ -171,11 +171,11 @@ database:
 | PUT | `/api/tags/:id` | 更新标签 |
 | DELETE | `/api/tags/:id` | 删除标签 |
 | POST | `/api/asset` | 新建 `{assetName, categoryId, tagIds?, tagNames?, remark}` |
-| GET | `/api/asset/list` | 分页：`keyword`, `categoryId`, `tagIds`（逗号分隔，**AND**）, `page`, `size` |
+| GET | `/api/asset/list` | 分页：`keyword`, `categoryId`, `tagIds`（逗号分隔，**AND**）, `page`, `size`, `sortBy`（`createTime`/`updateTime`/`assetName`/`sort`，默认 `createTime`）, `sortOrder`（`asc`/`desc`，默认 `desc`） |
 | GET | `/api/asset/:id` | 素材详情 + `files` + `tags` |
 | PUT | `/api/asset/:id` | 修改 `{assetName, categoryId, remark, sort}`；若带 `tagIds` 或 `tagNames` 则**全量替换**标签（空数组即清空） |
 | DELETE | `/api/asset/:id` | 删除素材（删 OSS 对象 + 逻辑删库） |
-| POST | `/api/asset/:id/files` | 上传，`multipart/form-data`，字段 `file`；可选 `remark`（说明，≤200 字） |
+| POST | `/api/asset/:id/files` | 上传，`multipart/form-data`：`file` 与 `sourceUrl` 互斥（二选一）；可选 `remark`（说明，≤200 字）。`sourceUrl` 为远程 http(s) 地址，由服务端拉取后入库 |
 | PUT | `/api/asset/:id/files/:fid` | 更新 `{ remark }`（说明，≤200 字） |
 | PUT | `/api/asset/:id/files/:fid/primary` | 设为主图 |
 | DELETE | `/api/asset/:id/files/:fid` | 删除单个格式文件 |

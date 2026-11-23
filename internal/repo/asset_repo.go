@@ -68,9 +68,29 @@ func (r *AssetRepo) SoftDelete(id int64) error {
 	return err
 }
 
+// NormalizeSort 将 API 排序参数映射为 SQL 列与方向；非法值按字段独立回退默认。
+func NormalizeSort(sortBy, sortOrder string) (col, dir string) {
+	switch sortBy {
+	case "updateTime":
+		col = "a.update_time"
+	case "assetName":
+		col = "a.asset_name"
+	case "sort":
+		col = "a.sort"
+	default: // createTime 及非法值
+		col = "a.create_time"
+	}
+	if sortOrder == "asc" {
+		dir = "ASC"
+	} else {
+		dir = "DESC"
+	}
+	return col, dir
+}
+
 // PageList 按关键字、分类、标签 AND 分页。keyword 只匹配名称和备注。
 // 每个 tagID 追加一条 EXISTS。结果带 CategoryName，并填上 Tags（无标签为空切片）。
-func (r *AssetRepo) PageList(keyword string, categoryID int64, tagIDs []int64, page, size int) ([]*model.Asset, int, error) {
+func (r *AssetRepo) PageList(keyword string, categoryID int64, tagIDs []int64, page, size int, sortBy, sortOrder string) ([]*model.Asset, int, error) {
 	where := "a.del_flag = 0"
 	args := make([]any, 0, 4+len(tagIDs))
 	if keyword != "" {
@@ -94,10 +114,11 @@ func (r *AssetRepo) PageList(keyword string, categoryID int64, tagIDs []int64, p
 		return nil, 0, err
 	}
 
+	col, dir := NormalizeSort(sortBy, sortOrder)
 	q := `SELECT a.id, a.asset_name, a.category_id, c.name, a.remark, a.sort, a.create_by,
 	             a.create_time, a.update_time,
 	             (SELECT COUNT(*) FROM asset_file f WHERE f.asset_id = a.id AND f.del_flag = 0)` +
-		from + ` ORDER BY a.sort DESC, a.id DESC LIMIT ? OFFSET ?`
+		from + ` ORDER BY ` + col + ` ` + dir + `, a.id DESC LIMIT ? OFFSET ?`
 	listArgs := append(append([]any{}, args...), size, (page-1)*size)
 	rows, err := r.db.Query(q, listArgs...)
 	if err != nil {

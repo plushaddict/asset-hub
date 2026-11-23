@@ -8,6 +8,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"mime/multipart"
 	"path/filepath"
 	"regexp"
@@ -216,14 +217,14 @@ func (s *AssetService) resolveTagIDs(tagIDs []int64, tagNames []string) ([]int64
 	return out, nil
 }
 
-func (s *AssetService) PageList(keyword string, categoryID int64, tagIDs []int64, page, size int) ([]*model.Asset, int, error) {
+func (s *AssetService) PageList(keyword string, categoryID int64, tagIDs []int64, page, size int, sortBy, sortOrder string) ([]*model.Asset, int, error) {
 	if page < 1 {
 		page = 1
 	}
 	if size < 1 || size > 100 {
 		size = 12
 	}
-	list, total, err := s.assetRepo.PageList(keyword, categoryID, tagIDs, page, size)
+	list, total, err := s.assetRepo.PageList(keyword, categoryID, tagIDs, page, size, sortBy, sortOrder)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -298,20 +299,54 @@ func (s *AssetService) UploadFile(assetID int64, header *multipart.FileHeader, r
 	if header.Size > MaxUploadSize {
 		return nil, errors.New("文件超过 20MB 限制")
 	}
-
+	f, err := header.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
 	suffix := strings.ToLower(strings.TrimPrefix(filepath.Ext(header.Filename), "."))
+	return s.saveAssetFileBytes(a, data, suffix, remark)
+}
+
+// UploadFileFromURL 从远程 http(s) 地址拉取文件后入库。
+func (s *AssetService) UploadFileFromURL(assetID int64, sourceURL, remark string) (*model.AssetFile, error) {
+	remark, err := normalizeFileRemark(remark)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.assetRepo.GetByID(assetID)
+	if err != nil {
+		return nil, mapNotFound(err, "素材不存在")
+	}
+	data, finalURL, ct, err := fetchRemoteFile(sourceURL)
+	if err != nil {
+		return nil, err
+	}
+	suffix, err := resolveRemoteSuffix(finalURL, ct)
+	if err != nil {
+		return nil, err
+	}
+	return s.saveAssetFileBytes(a, data, suffix, remark)
+}
+
+func (s *AssetService) saveAssetFileBytes(a *model.Asset, data []byte, suffix, remark string) (*model.AssetFile, error) {
 	if !allowedSuffix[suffix] {
 		return nil, errors.New("不支持的格式：" + suffix + "（允许 png/jpg/jpeg/svg/webp/ico/gif）")
 	}
-
-	exist, err := s.fileRepo.ExistSuffix(assetID, suffix)
+	if int64(len(data)) > MaxUploadSize {
+		return nil, errors.New("文件超过 20MB 限制")
+	}
+	exist, err := s.fileRepo.ExistSuffix(a.ID, suffix)
 	if err != nil {
 		return nil, err
 	}
 	if exist {
 		return nil, errors.New("该素材已存在 ." + suffix + " 文件，请先删除再上传")
 	}
-
 	cat, err := s.categoryRepo.Get(a.CategoryID)
 	if err != nil {
 		return nil, mapNotFound(err, "分类不存在")
@@ -320,47 +355,24 @@ func (s *AssetService) UploadFile(assetID int64, header *multipart.FileHeader, r
 	if err != nil {
 		return nil, err
 	}
-
-	f, err := header.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	buf := make([]byte, 0, header.Size)
-	data := bytes.NewBuffer(buf)
-	if _, err = data.ReadFrom(f); err != nil {
-		return nil, err
-	}
-
 	key := o.GenObjectKey(cat.OssPrefix, a.AssetName, suffix)
 	contentType := suffixMime[suffix]
-	if err = o.PutObject(key, bytes.NewReader(data.Bytes()), int64(data.Len()), contentType); err != nil {
+	if err = o.PutObject(key, bytes.NewReader(data), int64(len(data)), contentType); err != nil {
 		return nil, errors.New("上传 OSS 失败：" + err.Error())
 	}
-
-	// 图片宽高（svg/ico 解析不了，留空）
 	var w, h *int
-	if cfg, _, err := image.DecodeConfig(bytes.NewReader(data.Bytes())); err == nil {
+	if cfg, _, err := image.DecodeConfig(bytes.NewReader(data)); err == nil {
 		wv, hv := cfg.Width, cfg.Height
 		w, h = &wv, &hv
 	}
-
 	primary := 0
-	if has, _ := s.fileRepo.HasAnyFile(assetID); !has {
+	if has, _ := s.fileRepo.HasAnyFile(a.ID); !has {
 		primary = 1
 	}
-
 	af := &model.AssetFile{
-		AssetID:   assetID,
-		FileName:  a.AssetName + "." + suffix,
-		Suffix:    suffix,
-		FileSize:  int64(data.Len()),
-		Width:     w,
-		Height:    h,
-		ObjectKey: key,
-		IsPrimary: primary,
-		Remark:    remark,
+		AssetID: a.ID, FileName: a.AssetName + "." + suffix, Suffix: suffix,
+		FileSize: int64(len(data)), Width: w, Height: h, ObjectKey: key,
+		IsPrimary: primary, Remark: remark,
 	}
 	id, err := s.fileRepo.Insert(af)
 	if err != nil {

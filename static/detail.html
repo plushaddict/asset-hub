@@ -153,12 +153,26 @@
         OSS 未就绪，上传会失败。
         <button type="button" class="underline font-medium" @click="location.href='/settings?tab=oss'">去设置</button>
       </div>
-      <div class="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-blue-400"
+      <div class="flex gap-2 mb-3">
+        <button type="button" @click="setUploadSource('file')"
+                class="flex-1 text-xs px-3 py-2 rounded-lg border"
+                :class="uploadSource==='file' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'">本地文件</button>
+        <button type="button" @click="setUploadSource('url')"
+                class="flex-1 text-xs px-3 py-2 rounded-lg border"
+                :class="uploadSource==='url' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'">远程 URL</button>
+      </div>
+      <div x-show="uploadSource==='file'" class="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-blue-400"
            @dragover.prevent @drop.prevent="onDrop($event)" @click="$refs.fileInput.click()">
         <div class="text-sm text-slate-600" x-text="file?file.name:'点击选择文件，或拖拽到此处'"></div>
         <div class="text-[11px] text-slate-400 mt-1" x-show="file" x-text="file?fmtSize(file.size):''"></div>
         <div class="text-[11px] text-slate-400 mt-1" x-show="!file">支持 png / jpg / jpeg / svg / webp / ico / gif，≤20MB</div>
         <input type="file" class="hidden" x-ref="fileInput" accept=".png,.jpg,.jpeg,.svg,.webp,.ico,.gif" @change="pick($event)">
+      </div>
+      <div x-show="uploadSource==='url'">
+        <label class="block text-xs text-slate-500 mb-1">远程文件 URL</label>
+        <input class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="https://…/icon.ico"
+               x-model="sourceUrl" @input="msg='';uploadOssHint=false">
+        <p class="text-[11px] text-slate-400 mt-1.5">须以 http:// 或 https:// 开头；服务端拉取后按后缀入库，单文件 ≤20MB</p>
       </div>
       <label class="block text-xs text-slate-500 mb-1 mt-3">说明（可选）</label>
       <input class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="如：彩色、白底、小尺寸"
@@ -233,7 +247,7 @@ function app(){return{
   categories:[], tags:[],
   status:{ossReady:false,ossError:'',categoryCount:0,setupComplete:false},
   statusLoaded:false,
-  showUpload:false, file:null, uploading:false, uploadOssHint:false, uploadRemark:'',
+  showUpload:false, uploadSource:'file', sourceUrl:'', file:null, uploading:false, uploadOssHint:false, uploadRemark:'',
   showEdit:false, tagInput:'',
   editForm:{assetName:'',categoryId:0,tagIds:[],tagNames:[],remark:'',sort:0},
   msg:'',
@@ -303,6 +317,8 @@ function app(){return{
   },
 
   async openUpload(){
+    this.uploadSource='file'
+    this.sourceUrl=''
     this.file=null
     this.uploadRemark=''
     this.msg=''
@@ -310,15 +326,28 @@ function app(){return{
     this.showUpload=true
     this.loadStatus()
   },
-  pick(e){this.msg='';this.uploadOssHint=false;this.file=e.target.files[0]||null},
-  onDrop(e){this.msg='';this.uploadOssHint=false;this.file=(e.dataTransfer.files||[])[0]||null},
+  setUploadSource(mode){
+    this.uploadSource=mode
+    this.msg=''
+    this.uploadOssHint=false
+    if(mode==='file') this.sourceUrl=''
+    else this.file=null
+  },
+  pick(e){this.msg='';this.uploadOssHint=false;this.file=e.target.files[0]||null;if(this.file)this.sourceUrl=''},
+  onDrop(e){this.msg='';this.uploadOssHint=false;this.file=(e.dataTransfer.files||[])[0]||null;if(this.file)this.sourceUrl=''},
 
   looksLikeOss(msg){
     return !!(msg&&(msg.indexOf('OSS')>=0||msg.indexOf('设置')>=0))
   },
 
   async doUpload(){
-    if(!this.file){this.msg='请选择文件';return}
+    if(this.uploadSource==='url'){
+      const url=(this.sourceUrl||'').trim()
+      if(!url){this.msg='请填写远程 URL';return}
+      if(!/^https?:\/\//i.test(url)){this.msg='远程 URL 须以 http:// 或 https:// 开头';return}
+    }else if(!this.file){
+      this.msg='请选择文件';return
+    }
     if(this.statusLoaded&&!this.status.ossReady){
       this.msg='OSS 未就绪，请先到设置中配置'
       this.uploadOssHint=true
@@ -327,14 +356,21 @@ function app(){return{
     this.uploading=true
     this.msg=''
     this.uploadOssHint=false
-    const fd=new FormData(); fd.append('file',this.file)
+    const fd=new FormData()
     fd.append('remark',(this.uploadRemark||'').trim())
+    if(this.uploadSource==='url') fd.append('sourceUrl',(this.sourceUrl||'').trim())
+    else fd.append('file',this.file)
     try{
       const res=await fetch('/api/asset/'+this.assetId+'/files',{method:'POST',body:fd})
       if(res.status===401){location.href='/login';this.uploading=false;return}
       const d=await res.json()
-      if(d.code===0){this.uploadRemark='';this.showUpload=false;await this.loadAsset()}
-      else{
+      if(d.code===0){
+        this.uploadRemark=''
+        this.sourceUrl=''
+        this.file=null
+        this.showUpload=false
+        await this.loadAsset()
+      }else{
         this.msg=d.msg||'上传失败'
         this.uploadOssHint=this.looksLikeOss(d.msg)||(this.statusLoaded&&!this.status.ossReady)
       }

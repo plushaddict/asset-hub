@@ -1,6 +1,8 @@
 package service
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -104,5 +106,64 @@ func TestCreateAndUpdateAssetTags(t *testing.T) {
 	}
 	if len(cleared) != 0 {
 		t.Fatalf("clear tags = %+v", cleared)
+	}
+}
+
+func TestUploadFileFromURL_BadURLBeforeOSS(t *testing.T) {
+	db, err := repo.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_ = repo.Migrate(db)
+	catRepo := repo.NewCategoryRepo(db)
+	catID, _ := catRepo.Insert(&model.Category{Name: "图标", OssPrefix: "icons/", Sort: 0})
+	svc := NewAssetService(repo.NewAssetRepo(db), repo.NewAssetFileRepo(db), catRepo, repo.NewTagRepo(db), NewSettingsService(nil, nil))
+	a, err := svc.CreateAsset("logo", catID, nil, nil, "", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.UploadFileFromURL(a.ID, "ftp://x/a.ico", "")
+	if err == nil || !strings.Contains(err.Error(), "http") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestUploadFileFromURL_HTTP500BeforeOSS(t *testing.T) {
+	db, err := repo.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err = repo.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	catRepo := repo.NewCategoryRepo(db)
+	fileRepo := repo.NewAssetFileRepo(db)
+	catID, err := catRepo.Insert(&model.Category{Name: "图标", OssPrefix: "icons/", Sort: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewAssetService(repo.NewAssetRepo(db), fileRepo, catRepo, repo.NewTagRepo(db), NewSettingsService(nil, nil))
+	a, err := svc.CreateAsset("logo", catID, nil, nil, "", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	_, err = svc.UploadFileFromURL(a.ID, srv.URL+"/a.png", "")
+	if err == nil || !strings.Contains(err.Error(), "远程文件下载失败") || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("err=%v", err)
+	}
+	list, err := fileRepo.ListByAssetID(a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("file rows = %d, want 0", len(list))
 	}
 }

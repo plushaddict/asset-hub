@@ -65,12 +65,14 @@ docker stop assethub && docker rm assethub   # 删容器不删卷；数据仍在
 
 ### 3.1 命名卷（默认，推荐）
 
-在任意目录写 `docker-compose.yml`：
+在任意目录写 `docker-compose.yml`（群晖可直接用仓库内 [`deploy/docker-compose.synology.yml`](docker-compose.synology.yml)）：
 
 ```yaml
 services:
   assethub:
     image: blackcatzoo/assethub:latest
+    # 每次 up / 群晖「构建」前拉取该 tag 最新 digest（本地有 latest 也不跳过）
+    pull_policy: always
     ports:
       - "8080:8080"
     volumes:
@@ -87,6 +89,8 @@ docker compose up -d
 
 顶层 `volumes.assethub-data:` 为空映射是正常写法，表示让 Docker 托管该卷。
 
+> **群晖：** Container Manager 的「构建」≈ `compose up`，**不是**单独 `pull`。没有 `pull_policy: always` 时，本地已有 `latest` 就不会再拉 Hub。仓库根目录 `docker-compose.yml` 带 `build:`，仅适合本机源码构建，不要直接丢给群晖。
+
 ### 3.2 自定义宿主机目录
 
 想把库文件落到指定路径（便于备份、挂盘）时，改用**绑定挂载**，并去掉顶层 `volumes:`：
@@ -95,6 +99,7 @@ docker compose up -d
 services:
   assethub:
     image: blackcatzoo/assethub:latest
+    pull_policy: always
     ports:
       - "8080:8080"
     volumes:
@@ -220,6 +225,19 @@ docker compose up -d
 
 ## 7. 升级镜像
 
+Compose 已设 **`pull_policy: always`** 时：Hub 上对应 tag 有新构建后，执行 `docker compose up -d`，或群晖对该项目点 **构建**，会按 tag 再拉一次并重建容器。
+
+仅「停止 / 启动」在部分 DSM 上**不会**重新 pull。
+
+未设 `pull_policy` 时需手动：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+`docker run` 部署：
+
 ```bash
 docker pull blackcatzoo/assethub:latest
 
@@ -232,14 +250,7 @@ docker run -d \
   blackcatzoo/assethub:latest
 ```
 
-Compose：
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-务必继续挂载**同一数据路径**；若曾挂 `config.yaml`，升级时一并带上。
+务必继续挂载**同一数据路径**；若曾挂 `config.yaml`，升级时一并带上。钉死版本时把 `image` 改成如 `blackcatzoo/assethub:0.0.3` 再重建。
 
 ---
 
@@ -268,39 +279,14 @@ server {
 
 ---
 
-## 9. 发布镜像（维护者）
-
-仓库 Secrets：`DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN`（Access Token，非登录密码）。
-
-```bash
-git tag v0.0.2
-git push origin v0.0.2
-```
-
-产物：`blackcatzoo/assethub:0.0.2`、`blackcatzoo/assethub:latest`（`linux/amd64`）。  
-工作流：`.github/workflows/docker-publish.yml`。
-
----
-
-## 10. 常见问题
+## 9. 常见问题
 
 | 现象 | 处理 |
 | --- | --- |
-| Actions：`Username and password required` | 未配 Docker Hub Secrets |
 | 页面打不开 | `docker logs assethub`；查端口与安全组 |
 | `volumes.assethub-data:` 要不要填？ | 不用；空着即自动命名卷。要自定义路径见 **3.2** |
+| 群晖「构建」仍是旧版本 | Compose 缺 `pull_policy: always`；改用 **3.1** / `deploy/docker-compose.synology.yml` 后重建 |
 | 想改默认登录密码 | 挂载自定义 config（第 5 节）并重建容器 |
 | 上传 / 保存 OSS 失败 | 查 AK；保存设置需 `oss:GetBucketInfo` |
 | 换机 / 升级后数据没了 | 未挂同一命名卷或同一宿主机目录 |
 | 架构不兼容 | 官方镜像为 `linux/amd64`；ARM 需模拟或自建多架构 |
-
----
-
-## 相关文件
-
-| 文件 | 作用 |
-| --- | --- |
-| `deploy/Dockerfile` | 多阶段构建（Go → Alpine） |
-| `config.docker.yaml` | 镜像内默认进程配置（账号 / 库路径） |
-| `docker-compose.yml` | 仓库内编排示例（命名卷） |
-| `.github/workflows/docker-publish.yml` | 推送 `v*` tag 自动发布 |
