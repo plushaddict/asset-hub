@@ -56,6 +56,7 @@ jobs:
             awk -v tag="$TAG" '
               $0 ~ "^## \\[" tag "\\]" { found=1; next }
               found && /^## \[/ { exit }
+              found && /^---$/ { next }
               found { print }
             ' CHANGELOG.md | sed -e 's/^[[:space:]]*$//' | awk 'NF{p=1} p'
             echo
