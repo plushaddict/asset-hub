@@ -11,7 +11,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN go build -trimpath -ldflags="-s -w" -o /out/assethub .
+ARG VERSION=v0.0.4
+RUN go build -trimpath -ldflags="-s -w -X assethub/internal/version.Version=${VERSION}" -o /out/assethub .
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata \

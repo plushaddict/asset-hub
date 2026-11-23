@@ -8,7 +8,7 @@
 <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
 <style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}[x-cloak]{display:none!important}</style>
 </head>
-<body class="bg-slate-100 min-h-screen">
+<body class="bg-slate-100 min-h-screen pb-12">
 <div x-data="app()" x-init="init()">
 
   <div x-cloak x-show="statusLoaded && !status.setupComplete" class="sticky top-0 z-30 bg-amber-50 border-b border-amber-200">
@@ -139,6 +139,8 @@
 
   </div>
 
+  <footer class="fixed bottom-0 left-0 right-0 z-20 text-center text-[11px] text-slate-400 py-2.5 bg-slate-100/95 border-t border-slate-200/80" x-text="footerText()"></footer>
+
   <!-- 新建素材弹窗 -->
   <div x-cloak x-show="showCreate" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
     <div class="bg-white rounded-xl shadow-xl w-[480px] max-w-full max-h-[90vh] overflow-y-auto p-5" @click.outside="closeCreate()">
@@ -229,6 +231,7 @@ function app(){return{
   categories:[],tags:[],tagFilterOpen:false,
   status:{ossReady:false,ossError:'',categoryCount:0,setupComplete:false},
   statusLoaded:false,metaLoaded:false,
+  author:'blackcat',version:'v0.0.4',
   showCreate:false,msg:'',tagInput:'',
   form:{assetName:'',categoryId:0,tagIds:[],tagNames:[],remark:''},
   createFiles:[], createAssetId:null, uploading:false, uploadOssHint:false,
@@ -238,6 +241,7 @@ function app(){return{
 
   totalPages(){return Math.max(1,Math.ceil(this.total/this.size))},
   hasFilter(){return !!(this.keyword||this.categoryId||this.filterTagIds.length)},
+  footerText(){return '作者：'+this.author+' · 版本：'+this.version},
 
   async request(url,opts){
     const res=await fetch(url,opts)
@@ -251,7 +255,17 @@ function app(){return{
   },
 
   async init(){
-    await Promise.all([this.loadStatus(),this.loadMeta(),this.load()])
+    await Promise.all([this.loadStatus(),this.loadMeta(),this.loadFooter(),this.load()])
+  },
+
+  async loadFooter(){
+    try{
+      const d=await this.request('/api/version')
+      if(d.code===0&&d.data){
+        this.author=d.data.author||'blackcat'
+        this.version=d.data.version||'v0.0.4'
+      }
+    }catch(e){/* keep defaults */}
   },
 
   async loadStatus(){

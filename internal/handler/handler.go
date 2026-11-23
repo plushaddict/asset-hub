@@ -14,6 +14,7 @@ import (
 	"assethub/internal/config"
 	"assethub/internal/model"
 	"assethub/internal/service"
+	"assethub/internal/version"
 )
 
 type Handler struct {
@@ -456,6 +457,12 @@ func (h *Handler) DeleteFile(c *gin.Context) {
 		return
 	}
 	ok(c, nil)
+}
+
+// ---------- 版本信息（无需登录） ----------
+
+func (h *Handler) Version(c *gin.Context) {
+	ok(c, gin.H{"version": version.Version, "author": version.Author})
 }
 
 // ---------- 业务查询（给 ComiGo 等业务调用） ----------

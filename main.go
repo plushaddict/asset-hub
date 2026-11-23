@@ -79,6 +79,7 @@ func main() {
 	r.POST("/api/logout", h.Logout)
 
 	// 业务查询接口（无需登录，可配 token）
+	r.GET("/api/version", h.Version)
 	r.GET("/api/business/asset", h.BusinessAsset)
 
 	// 管理接口
