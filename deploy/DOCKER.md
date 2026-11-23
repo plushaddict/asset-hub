@@ -356,7 +356,10 @@ server {
 
 ## 9. 发版到 Docker Hub（维护者）
 
-推送符合 `v*` 的 git tag 后，GitHub Actions（[`.github/workflows/docker-publish.yml`](../.github/workflows/docker-publish.yml)）会构建并推送：
+推送符合 `v*` 的 git tag 后，GitHub Actions（[`.github/workflows/docker-publish.yml`](../.github/workflows/docker-publish.yml)）会：
+
+1. 构建并推送 Docker 镜像  
+2. 从 `CHANGELOG.md` 对应章节生成 **GitHub Release**（已有则更新正文）
 
 | Hub tag | 来源 |
 | --- | --- |
@@ -375,12 +378,12 @@ server {
 ```bash
 git checkout main
 git pull
-# 确认待发布提交已在 main
+# 先在 CHANGELOG.md 顶部写好 [vX.Y.Z] 章节，并提交到 main
 git tag -a vX.Y.Z -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-在 Actions 中查看 `docker-publish` 是否成功。构建失败时保留该 tag 作记录，修完后打**新** semver tag 再推，不要默认 force 挪已失败的正式版 tag。
+在 Actions 中查看 `docker-publish` 是否成功；成功后应出现 [Releases](https://github.com/plushaddict/asset-hub/releases) 条目。构建失败时保留该 tag 作记录，修完后打**新** semver tag 再推，不要默认 force 挪已失败的正式版 tag。
 
 镜像构建参数会注入页脚版本号（`VERSION=${{ github.ref_name }}`）。
 

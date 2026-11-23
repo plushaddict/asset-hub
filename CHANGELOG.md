@@ -1,7 +1,8 @@
 # 更新日志
 
 本文件记录 AssetHub 各 **git tag** 对应的用户可见变更。  
-约定：打正式版本 tag（如 `v1.2.0`）时，在本文档**最上方**追加一节，再推送 tag。
+约定：打正式版本 tag（如 `v1.2.0`）时，在本文档**最上方**追加一节，再推送 tag。  
+推送 `v*` tag 后，GitHub Actions 会推送 Docker 镜像，并按本节内容创建 / 更新对应 [GitHub Release](https://github.com/plushaddict/asset-hub/releases)。
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 

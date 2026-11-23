@@ -8,7 +8,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -41,3 +41,55 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ github.ref_name }}
+
+      - name: Extract changelog for tag
+        id: changelog
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          BODY_FILE="${RUNNER_TEMP}/release-notes.md"
+          VERSION="${TAG#v}"
+          {
+            echo "## 变更说明"
+            echo
+            awk -v tag="$TAG" '
+              $0 ~ "^## \\[" tag "\\]" { found=1; next }
+              found && /^## \[/ { exit }
+              found { print }
+            ' CHANGELOG.md | sed -e 's/^[[:space:]]*$//' | awk 'NF{p=1} p'
+            echo
+            echo "---"
+            echo
+            echo "镜像：\`plushaddict/assethub:${VERSION}\` / \`plushaddict/assethub:latest\`"
+            echo
+            echo "完整日志见 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${TAG}/CHANGELOG.md)。"
+          } > "$BODY_FILE"
+
+          if ! grep -qE '^### |^- ' "$BODY_FILE"; then
+            {
+              echo "## 变更说明"
+              echo
+              echo "未在 CHANGELOG.md 找到 \`${TAG}\` 专节，请补写后再编辑本 Release。"
+              echo
+              echo "---"
+              echo
+              echo "镜像：\`plushaddict/assethub:${VERSION}\` / \`plushaddict/assethub:latest\`"
+            } > "$BODY_FILE"
+          fi
+          echo "body_file=$BODY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          BODY_FILE: ${{ steps.changelog.outputs.body_file }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes-file "$BODY_FILE"
+            echo "Updated existing release $TAG"
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file "$BODY_FILE" --verify-tag
+            echo "Created release $TAG"
+          fi
